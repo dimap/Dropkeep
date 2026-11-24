@@ -36,13 +36,13 @@
 ## Возможности
 
 ### Организация и быстрый доступ
-- **Вложенные коллекции** с иконками, цветами и перетаскиванием закладок (Drag & Drop).
+- **Вложенные коллекции** с набором из 40 иконок, поддержкой любых эмодзи, цветами и перетаскиванием закладок (Drag & Drop).
 - **Умные фильтры** по типу контента (статьи, видео, изображения, ссылки, документы), заметкам и цитатам, офлайн-PDF, закладкам без тегов и дубликатам.
-- **Теги и массовые действия** — переименование, удаление, перенос и тегирование выбранных закладок.
+- **Теги и массовые действия** — выбор всех отображаемых закладок в один клик, массовое обновление превью и описаний, переименование, удаление, перенос и тегирование.
 - **Привычное поведение Raindrop** — клик по закладке открывает ссылку в новой вкладке, а редактирование доступно в панели действий (и отдельной кнопкой на мобильных).
 
 ### Режимы отображения и производительность
-- **4 режима просмотра** — карточки, плитка (Masonry), список и заголовки, включая полную поддержку в мобильной версии.
+- **4 режима просмотра** — карточки, плитка (Masonry слева направо), список и заголовки, включая полную поддержку в мобильной версии.
 - **Гибкая настройка вида** — выбор числа столбцов и переключение отображаемых полей (обложка, описание, заметки, цитаты, теги, метаданные).
 - **Светлая и тёмная темы**.
 - **Оптимизация для больших библиотек** — порционный рендер по мере прокрутки, мемоизация карточек и подгрузка полного текста статьи только при открытии конкретной закладки.
@@ -74,17 +74,104 @@
 
 Все данные (база SQLite, офлайн-PDF и скриншоты обложек) хранятся в одном Docker-томе `/data`.
 
-### 1. Лёгкий запуск (x86_64 / ARM64 / Raspberry Pi)
-```bash
-git clone <url-вашего-репозитория> dropkeep
-cd dropkeep
-cp .env.example .env
-docker compose up -d --build
+### Вариант 1. Установка готового образа с GitHub (GHCR) — рекомендуется
+
+При публикации каждого нового релиза в GitHub Actions автоматически собираются и публикуются мультиархитектурные образы (`linux/amd64` и `linux/arm64` — подходит для x86_64-серверов, Apple Silicon и Raspberry Pi).
+
+Замените `<owner>/<repo>` на имя вашего аккаунта и репозитория на GitHub (в нижнем регистре, например `ghcr.io/username/dropkeep:latest`).
+
+#### Запуск через `docker compose`
+
+Создайте файл `docker-compose.yml`:
+
+```yaml
+services:
+  dropkeep:
+    image: ghcr.io/<owner>/<repo>:latest
+    container_name: dropkeep
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/data
+      # Опционально: защита мастер-паролем
+      # - APP_PASSWORD=your-strong-password
+      # - SESSION_SECRET=your-long-random-hex-secret
+      # Опционально: полные PDF и WebP-обложки через Gotenberg
+      # - GOTENBERG_URL=http://gotenberg:3000
+      # Опционально: собственный OpenAI-совместимый ИИ
+      # - AI_API_URL=https://openrouter.ai/api/v1
+      # - AI_API_KEY=sk-...
+      # - AI_MODEL=openai/gpt-4o-mini
+    volumes:
+      - dropkeep_data:/data
+
+  # Опциональный Chromium для полных PDF-снимков и скриншотов обложек
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: dropkeep-gotenberg
+    profiles: ["full-pdf"]
+    restart: unless-stopped
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=false"
+      - "--api-timeout=30s"
+
+volumes:
+  dropkeep_data:
+    driver: local
 ```
+
+Запустите контейнер:
+
+```bash
+# Базовый запуск
+docker compose up -d
+
+# Или с Chromium (Gotenberg) для полных PDF-снимков и скриншотов обложек
+GOTENBERG_URL=http://gotenberg:3000 docker compose --profile full-pdf up -d
+```
+
+#### Быстрый запуск одной командой (`docker run`)
+
+```bash
+docker run -d \
+  --name dropkeep \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v dropkeep_data:/data \
+  ghcr.io/<owner>/<repo>:latest
+```
+
 Приложение будет доступно по адресу `http://localhost:3000`.
 
-### 2. Запуск с Chromium (полные визуальные PDF-снимки и скриншоты обложек)
+#### Обновление и выбор версии
+
 ```bash
+# Обновление до последнего релиза
+docker compose pull && docker compose up -d
+```
+
+Можно зафиксировать конкретный релиз по тегу версии, например:
+- `ghcr.io/<owner>/<repo>:latest` — последний стабильный релиз
+- `ghcr.io/<owner>/<repo>:1.2.0` — точная версия релиза
+- `ghcr.io/<owner>/<repo>:1.2` или `:1` — последняя версия в ветке `1.2.x` / `1.x`
+
+> **Публикация релизов:** воркфлоу `.github/workflows/docker-publish.yml` запускается автоматически при создании нового **Release** на GitHub (например, с тегом `v1.0.0`), а также доступен для ручного запуска во вкладке **Actions → Publish Docker Image to GHCR → Run workflow**. После первой публикации при необходимости откройте доступ к пакету в настройках пакета на GitHub (**Packages → dropkeep → Package settings → Change visibility → Public**), чтобы образ скачивался без `docker login`.
+
+### Вариант 2. Сборка из исходников
+
+```bash
+git clone https://github.com/<owner>/<repo>.git dropkeep
+cd dropkeep
+cp .env.example .env
+
+# Лёгкий запуск (x86_64 / ARM64 / Raspberry Pi)
+docker compose up -d --build
+
+# Или с Chromium (Gotenberg) для полных PDF-снимков и скриншотов обложек
 GOTENBERG_URL=http://gotenberg:3000 docker compose --profile full-pdf up -d --build
 ```
 

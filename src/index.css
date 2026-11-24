@@ -39,13 +39,3 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(120, 128, 140, 0.45);
 }
-
-/* Masonry grid column stability */
-.masonry-grid {
-  column-gap: 16px;
-}
-
-.masonry-item {
-  break-inside: avoid;
-  margin-bottom: 16px;
-}

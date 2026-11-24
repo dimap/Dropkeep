@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Search, Sparkles, X } from 'lucide-react';
 import { api } from './api';
 import { AddBookmarkModal, type BookmarkDraft } from './components/AddBookmarkModal';
 import { AuthGate } from './components/AuthGate';
-import { BookmarkViews } from './components/BookmarkViews';
+import { BookmarkViews, type BulkRefreshProgress } from './components/BookmarkViews';
 import { CollectionModal } from './components/CollectionModal';
 import { InspectorPanel } from './components/InspectorPanel';
 import { PdfViewerModal } from './components/PdfViewerModal';
@@ -166,6 +166,9 @@ export default function App() {
   const [pdfViewerBookmark, setPdfViewerBookmark] = useState<Bookmark | null>(null);
   const [savingPdfId, setSavingPdfId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [refreshingIds, setRefreshingIds] = useState<string[]>([]);
+  const [bulkRefreshProgress, setBulkRefreshProgress] = useState<BulkRefreshProgress | null>(null);
+  const bulkRefreshCancelRef = useRef(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Modals
@@ -614,6 +617,14 @@ export default function App() {
     setSelectedIds(bookmarks.map((b) => b.id));
   }, [bookmarks]);
 
+  const handleToggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) =>
+      bookmarks.length > 0 && prev.length === bookmarks.length
+        ? []
+        : bookmarks.map((b) => b.id)
+    );
+  }, [bookmarks]);
+
   const handleClearSelection = useCallback(() => {
     setSelectedIds([]);
   }, []);
@@ -698,6 +709,76 @@ export default function App() {
     refreshAll();
   }, [selectedIds, refreshAll, showToast]);
 
+  const handleCancelBulkRefresh = useCallback(() => {
+    bulkRefreshCancelRef.current = true;
+  }, []);
+
+  const handleBulkRefresh = useCallback(async () => {
+    const idsToRefresh = [...selectedIds];
+    if (!idsToRefresh.length || bulkRefreshProgress) return;
+
+    bulkRefreshCancelRef.current = false;
+    let cursor = 0;
+    let completed = 0;
+    let succeeded = 0;
+    let failed = 0;
+    const failedIds: string[] = [];
+
+    setBulkRefreshProgress({
+      completed: 0,
+      total: idsToRefresh.length,
+      succeeded: 0,
+      failed: 0,
+    });
+
+    const workerCount = Math.min(3, idsToRefresh.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (!bulkRefreshCancelRef.current) {
+        const idx = cursor++;
+        if (idx >= idsToRefresh.length) break;
+        const id = idsToRefresh[idx];
+
+        setRefreshingIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        try {
+          const updated = await api.refreshBookmark(id);
+          succeeded += 1;
+          setBookmarks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+          setActiveBookmark((curr) => (curr && curr.id === updated.id ? updated : curr));
+        } catch {
+          failed += 1;
+          failedIds.push(id);
+        } finally {
+          completed += 1;
+          setRefreshingIds((prev) => prev.filter((item) => item !== id));
+          setBulkRefreshProgress({
+            completed,
+            total: idsToRefresh.length,
+            succeeded,
+            failed,
+          });
+        }
+      }
+    });
+
+    await Promise.all(workers);
+
+    setBulkRefreshProgress(null);
+    setRefreshingIds([]);
+    loadWorkspace();
+
+    if (bulkRefreshCancelRef.current) {
+      showToast(`Обновление остановлено (обновлено: ${succeeded} из ${idsToRefresh.length})`);
+    } else if (failed === 0) {
+      setSelectedIds([]);
+      showToast(`Обновлено превью и описаний: ${succeeded}`);
+    } else if (succeeded > 0) {
+      setSelectedIds(failedIds);
+      showToast(`Обновлено: ${succeeded} из ${idsToRefresh.length} (не удалось: ${failed})`);
+    } else {
+      showToast('Не удалось обновить превью для выбранных закладок');
+    }
+  }, [selectedIds, bulkRefreshProgress, loadWorkspace, showToast]);
+
   // Compute current workspace header title
   const getHeaderTitle = () => {
     if (activeTag) return `#${activeTag}`;
@@ -760,6 +841,7 @@ export default function App() {
         <TopBar
           title={getHeaderTitle()}
           count={bookmarks.length}
+          selectedCount={selectedIds.length}
           search={search}
           aiConfigured={aiConfigured}
           smartSearchMode={smartSearchMode}
@@ -775,6 +857,7 @@ export default function App() {
           onToggleDisplayField={handleToggleDisplayField}
           onSortModeChange={setSortMode}
           onColumnCountChange={handleColumnCountChange}
+          onToggleSelectAll={handleToggleSelectAll}
           onOpenAddModal={() => setAddModalOpen(true)}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
         />
@@ -940,6 +1023,8 @@ export default function App() {
           activeBookmarkId={activeBookmark?.id || null}
           selectedIds={selectedIds}
           savingPdfId={savingPdfId}
+          refreshingIds={refreshingIds}
+          bulkRefreshProgress={bulkRefreshProgress}
           onSelectBookmark={handleSelectBookmark}
           onToggleSelectId={handleToggleSelectId}
           onSelectAll={handleSelectAll}
@@ -952,6 +1037,8 @@ export default function App() {
           onDeletePermanent={handleDeletePermanent}
           onEmptyTrash={handleEmptyTrash}
           onBulkAction={handleBulkAction}
+          onBulkRefresh={handleBulkRefresh}
+          onCancelBulkRefresh={handleCancelBulkRefresh}
           onClickTag={handleSelectTag}
           onOpenAddModal={handleOpenAddModal}
         />

@@ -25,7 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Collection, NavScope, SmartFilter, SmartStats, TagCount } from '../types';
-import { getCollectionIcon } from '../utils/icons';
+import { CollectionIconView } from '../utils/icons';
 import { DropkeepLogo } from './DropkeepLogo';
 
 interface SidebarProps {
@@ -143,7 +143,6 @@ export const Sidebar = memo(function Sidebar({
       const children = childrenByParent.get(col.id) || [];
       const hasChildren = children.length > 0;
       const isExpanded = !collapsedNodes[col.id];
-      const Icon = getCollectionIcon(col.icon);
       const isActive =
         scope === 'collection' && activeCollectionId === col.id && !activeFilter && !activeTag;
       const isDragTarget = dragOverKey === `col-${col.id}`;
@@ -182,10 +181,10 @@ export const Sidebar = memo(function Sidebar({
               {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
             </button>
 
-            <Icon
+            <CollectionIconView
+              icon={col.icon}
+              color={isActive ? undefined : col.color}
               className="w-4 h-4 shrink-0"
-              style={{ color: isActive ? undefined : col.color }}
-              strokeWidth={1.85}
             />
 
             <span className="truncate flex-1">{col.title}</span>

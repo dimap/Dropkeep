@@ -3,26 +3,46 @@ import {
   BookOpen,
   Bookmark as BookmarkIcon,
   Briefcase,
+  Calendar,
   Camera,
+  Cloud,
   Code,
+  Coffee,
   Compass,
   Cpu,
   Database,
+  Dumbbell,
   FileText,
   Film,
+  Flame,
   Folder,
+  Gamepad2,
   Globe,
+  GraduationCap,
+  Headphones,
+  Heart,
   Home,
   Image as ImageIcon,
   Layers,
+  Lightbulb,
   Link2,
+  Lock,
+  MapPin,
   Music,
+  Newspaper,
   Palette,
   PlayCircle,
+  Rocket,
   Server,
+  Shield,
+  ShoppingBag,
+  Sparkles,
   Star,
   Terminal,
   Type,
+  Utensils,
+  Wallet,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import type { BookmarkType } from '../types';
@@ -48,7 +68,34 @@ export const COLLECTION_ICONS: Record<string, { icon: LucideIcon; label: string 
   briefcase: { icon: Briefcase, label: 'Работа' },
   home: { icon: Home, label: 'Дом' },
   archive: { icon: Archive, label: 'Архив' },
+  sparkles: { icon: Sparkles, label: 'ИИ и магия' },
+  rocket: { icon: Rocket, label: 'Стартапы и запуск' },
+  flame: { icon: Flame, label: 'Горячее' },
+  heart: { icon: Heart, label: 'Любимое' },
+  lightbulb: { icon: Lightbulb, label: 'Идеи' },
+  'graduation-cap': { icon: GraduationCap, label: 'Обучение' },
+  newspaper: { icon: Newspaper, label: 'Новости' },
+  'shopping-bag': { icon: ShoppingBag, label: 'Покупки' },
+  wallet: { icon: Wallet, label: 'Финансы' },
+  shield: { icon: Shield, label: 'Безопасность' },
+  wrench: { icon: Wrench, label: 'Инструменты' },
+  'gamepad-2': { icon: Gamepad2, label: 'Игры' },
+  headphones: { icon: Headphones, label: 'Подкасты' },
+  'map-pin': { icon: MapPin, label: 'Путешествия' },
+  utensils: { icon: Utensils, label: 'Рецепты и еда' },
+  dumbbell: { icon: Dumbbell, label: 'Спорт' },
+  coffee: { icon: Coffee, label: 'Отдых' },
+  cloud: { icon: Cloud, label: 'Облако' },
+  lock: { icon: Lock, label: 'Личное' },
+  calendar: { icon: Calendar, label: 'Планы' },
 };
+
+export const COLLECTION_EMOJIS = [
+  '📁', '🚀', '💡', '🔥', '⭐', '❤️', '🧠', '🤖', '💻', '🛠️',
+  '🎨', '📸', '🎬', '🎧', '📚', '📝', '📰', '🌐', '☁️', '🔒',
+  '💼', '💰', '🛒', '🏠', '✈️', '🗺️', '🍕', '☕', '🏋️', '🎮',
+  '🧪', '📊', '📅', '🎯', '📌', '🔖', '⚡', '🌿', '🎵', '🧩',
+];
 
 export const COLLECTION_COLORS = [
   '#0B72E7',
@@ -64,8 +111,55 @@ export const COLLECTION_COLORS = [
   '#64748B',
 ];
 
+export function isEmojiCollectionIcon(name: string): boolean {
+  const trimmed = (name || '').trim();
+  if (!trimmed || COLLECTION_ICONS[trimmed]) return false;
+  return !/^[a-z0-9_-]+$/i.test(trimmed);
+}
+
+export function extractFirstGrapheme(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const IntlWithSeg = Intl as unknown as {
+    Segmenter?: new (
+      locale?: string,
+      options?: { granularity?: 'grapheme' | 'word' | 'sentence' }
+    ) => { segment: (s: string) => Iterable<{ segment: string }> };
+  };
+  if (typeof IntlWithSeg.Segmenter === 'function') {
+    const segmenter = new IntlWithSeg.Segmenter(undefined, { granularity: 'grapheme' });
+    for (const part of segmenter.segment(trimmed)) {
+      return part.segment;
+    }
+  }
+  return Array.from(trimmed)[0] || '';
+}
+
 export function getCollectionIcon(name: string): LucideIcon {
   return COLLECTION_ICONS[name]?.icon || Folder;
+}
+
+export function CollectionIconView({
+  icon,
+  color,
+  className = 'w-4 h-4 shrink-0',
+}: {
+  icon: string;
+  color?: string;
+  className?: string;
+}) {
+  if (isEmojiCollectionIcon(icon)) {
+    return (
+      <span
+        aria-hidden="true"
+        className="w-4 h-4 shrink-0 inline-flex items-center justify-center text-[14px] leading-none select-none"
+      >
+        {icon}
+      </span>
+    );
+  }
+  const Icon = getCollectionIcon(icon);
+  return <Icon className={className} style={color ? { color } : undefined} strokeWidth={1.85} />;
 }
 
 export function getBookmarkTypeMeta(type: BookmarkType): {

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUpDown,
+  CheckSquare,
   Loader2,
   Menu,
   Plus,
   Search,
   Sparkles,
+  Square,
   X,
 } from 'lucide-react';
 import type { DisplayFields, SortMode, ViewMode } from '../types';
@@ -14,6 +16,7 @@ import { ViewSettingsMenu } from './ViewSettingsMenu';
 interface TopBarProps {
   title: string;
   count: number;
+  selectedCount: number;
   search: string;
   aiConfigured: boolean;
   smartSearchMode: boolean;
@@ -29,6 +32,7 @@ interface TopBarProps {
   onToggleDisplayField: (field: keyof DisplayFields) => void;
   onSortModeChange: (sort: SortMode) => void;
   onColumnCountChange: (cols: number) => void;
+  onToggleSelectAll: () => void;
   onOpenAddModal: () => void;
   onOpenMobileSidebar: () => void;
 }
@@ -53,6 +57,7 @@ const SEARCH_HINTS = [
 export function TopBar({
   title,
   count,
+  selectedCount,
   search,
   aiConfigured,
   smartSearchMode,
@@ -68,6 +73,7 @@ export function TopBar({
   onToggleDisplayField,
   onSortModeChange,
   onColumnCountChange,
+  onToggleSelectAll,
   onOpenAddModal,
   onOpenMobileSidebar,
 }: TopBarProps) {
@@ -112,6 +118,37 @@ export function TopBar({
         <span className="text-[12px] tabular-nums text-[#8B929E] dark:text-[#747B88] whitespace-nowrap shrink-0">
           {count}
         </span>
+
+        {count > 0 && (
+          <button
+            type="button"
+            onClick={onToggleSelectAll}
+            title={
+              selectedCount > 0 && selectedCount === count
+                ? 'Снять выделение со всех закладок'
+                : `Выбрать все отображаемые закладки (${count})`
+            }
+            aria-label={
+              selectedCount > 0 && selectedCount === count
+                ? 'Снять выделение'
+                : 'Выбрать все отображаемые закладки'
+            }
+            className={`h-7 px-2 rounded-md text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              selectedCount > 0 && selectedCount === count
+                ? 'bg-[#EDF4FE] dark:bg-[#192B44] text-[#0B72E7] dark:text-[#60A5FA]'
+                : 'text-[#5F6672] dark:text-[#9CA3AF] hover:bg-[#F3F4F6] dark:hover:bg-[#2B2D32] hover:text-[#181A1F] dark:hover:text-white'
+            }`}
+          >
+            {selectedCount > 0 && selectedCount === count ? (
+              <CheckSquare className="w-3.5 h-3.5 shrink-0" />
+            ) : (
+              <Square className="w-3.5 h-3.5 shrink-0" />
+            )}
+            <span className="hidden xl:inline">
+              {selectedCount > 0 && selectedCount === count ? 'Снять выбор' : 'Выбрать все'}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Center: Integrated Search Bar (+ optional AI Smart Search when AI is configured) */}

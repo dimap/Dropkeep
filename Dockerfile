@@ -28,7 +28,7 @@ ENV DATA_DIR=/data
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/* \
-  && mkdir -p /data/snapshots && chown -R node:node /data
+  && mkdir -p /data/snapshots /data/covers && chown -R node:node /data
 
 COPY --from=builder --chown=node:node /app/package.json ./
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
