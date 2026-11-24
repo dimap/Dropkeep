@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <rect width="800" height="500" fill="#18181B"/>
+  <rect x="96" y="72" width="608" height="356" rx="14" fill="#27272A" stroke="#3F3F46" stroke-width="1.5"/>
+  <!-- Video frame -->
+  <rect x="128" y="104" width="544" height="244" rx="8" fill="#111113"/>
+  <circle cx="400" cy="226" r="44" fill="#0B72E7"/>
+  <polygon points="388,206 388,246 422,226" fill="#FFFFFF"/>
+  <!-- Scrubber bar -->
+  <rect x="128" y="376" width="544" height="8" rx="4" fill="#3F3F46"/>
+  <rect x="128" y="376" width="218" height="8" rx="4" fill="#3B93F7"/>
+  <circle cx="346" cy="380" r="8" fill="#FFFFFF"/>
+  <text x="616" y="408" font-family="monospace" font-size="14" fill="#A1A1AA">24:18</text>
+  <text x="128" y="408" font-family="sans-serif" font-size="14" fill="#E4E4E7" font-weight="600">SQLite Internals &amp; WAL Mode</text>
+</svg>

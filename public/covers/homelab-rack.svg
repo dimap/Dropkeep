@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#17191E"/>
+      <stop offset="100%" stop-color="#222630"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="500" fill="url(#bg2)"/>
+  <g stroke="#2F3542" stroke-width="1">
+    <line x1="80" y1="0" x2="80" y2="500"/>
+    <line x1="240" y1="0" x2="240" y2="500"/>
+    <line x1="400" y1="0" x2="400" y2="500"/>
+    <line x1="560" y1="0" x2="560" y2="500"/>
+    <line x1="720" y1="0" x2="720" y2="500"/>
+  </g>
+  <!-- Rack Units -->
+  <rect x="130" y="95" width="540" height="82" rx="8" fill="#2A2E38" stroke="#3D4352" stroke-width="1.5"/>
+  <rect x="158" y="122" width="180" height="28" rx="4" fill="#1B1E25"/>
+  <rect x="358" y="128" width="90" height="16" rx="3" fill="#3B93F7" opacity="0.25"/>
+  <circle cx="614" cy="136" r="6" fill="#22C55E"/>
+  <circle cx="638" cy="136" r="6" fill="#3B93F7"/>
+
+  <rect x="130" y="198" width="540" height="82" rx="8" fill="#2A2E38" stroke="#3D4352" stroke-width="1.5"/>
+  <g fill="#1B1E25">
+    <rect x="158" y="220" width="44" height="38" rx="3"/>
+    <rect x="212" y="220" width="44" height="38" rx="3"/>
+    <rect x="266" y="220" width="44" height="38" rx="3"/>
+    <rect x="320" y="220" width="44" height="38" rx="3"/>
+    <rect x="374" y="220" width="44" height="38" rx="3"/>
+  </g>
+  <rect x="444" y="228" width="142" height="22" rx="4" fill="#1B1E25"/>
+  <rect x="454" y="236" width="84" height="6" rx="2" fill="#3B93F7"/>
+  <circle cx="614" cy="239" r="6" fill="#22C55E"/>
+  <circle cx="638" cy="239" r="6" fill="#64748B"/>
+
+  <rect x="130" y="301" width="540" height="82" rx="8" fill="#2A2E38" stroke="#3D4352" stroke-width="1.5"/>
+  <rect x="158" y="328" width="286" height="28" rx="4" fill="#1B1E25"/>
+  <rect x="172" y="339" width="110" height="6" rx="2" fill="#94A3B8"/>
+  <rect x="294" y="339" width="60" height="6" rx="2" fill="#3B93F7"/>
+  <circle cx="614" cy="342" r="6" fill="#22C55E"/>
+  <circle cx="638" cy="342" r="6" fill="#22C55E"/>
+</svg>

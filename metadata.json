@@ -1,0 +1,6 @@
+{
+  "name": "Dropkeep",
+  "description": "Self-hosted Raindrop.io-inspired visual bookmark manager with nested collections, smart filters, highlights, offline snapshots, and Docker support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,45 @@
+services:
+  dropkeep:
+    build: .
+    container_name: dropkeep
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/data
+      # Optional: enable full visual webpage PDF capture (HTML/CSS/JS/images)
+      # by launching with: GOTENBERG_URL=http://gotenberg:3000 docker compose --profile full-pdf up -d
+      - GOTENBERG_URL=${GOTENBERG_URL:-}
+      # Optional: custom OpenAI-compatible AI model for automatic bookmark tagging
+      # (OpenAI, OpenRouter, DeepSeek, Ollama, vLLM, LM Studio, etc.)
+      - AI_API_URL=${AI_API_URL:-}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-}
+      # Uncomment to protect your self-hosted instance with a master password:
+      # - APP_PASSWORD=your-strong-password-here
+      # - SESSION_SECRET=your-long-random-hex-secret
+    volumes:
+      - dropkeep_data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Optional Chromium sidecar for full visual webpage-to-PDF snapshots (x86_64 & ARM64)
+  # Start with: GOTENBERG_URL=http://gotenberg:3000 docker compose --profile full-pdf up -d
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: dropkeep-gotenberg
+    profiles: ["full-pdf"]
+    restart: unless-stopped
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=false"
+      - "--api-timeout=30s"
+
+volumes:
+  dropkeep_data:
+    driver: local

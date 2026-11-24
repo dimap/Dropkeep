@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <rect width="800" height="500" fill="#0F172A"/>
+  <rect x="76" y="58" width="648" height="384" rx="12" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
+  <rect x="76" y="58" width="648" height="42" rx="12" fill="#162032"/>
+  <circle cx="106" cy="79" r="6" fill="#EF4444" opacity="0.8"/>
+  <circle cx="128" cy="79" r="6" fill="#F59E0B" opacity="0.8"/>
+  <circle cx="150" cy="79" r="6" fill="#22C55E" opacity="0.8"/>
+  <rect x="310" y="73" width="180" height="12" rx="6" fill="#334155"/>
+
+  <g font-family="monospace" font-size="16">
+    <text x="112" y="148" fill="#38BDF8">services:</text>
+    <text x="138" y="182" fill="#E2E8F0">dropkeep:</text>
+    <text x="164" y="216" fill="#94A3B8">image: <tspan fill="#4ADE80">ghcr.io/selfhost/dropkeep:latest</tspan></text>
+    <text x="164" y="250" fill="#94A3B8">restart: <tspan fill="#FBBF24">unless-stopped</tspan></text>
+    <text x="164" y="284" fill="#94A3B8">ports:</text>
+    <text x="190" y="316" fill="#E2E8F0">- "3000:3000"</text>
+    <text x="164" y="350" fill="#94A3B8">volumes:</text>
+    <text x="190" y="382" fill="#38BDF8">- ./data:/data</text>
+  </g>
+</svg>

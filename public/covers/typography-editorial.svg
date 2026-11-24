@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 760" width="600" height="760">
+  <rect width="600" height="760" fill="#F4F1EA"/>
+  <rect x="48" y="48" width="504" height="664" fill="#FAF8F4" stroke="#DCD6C8" stroke-width="1.5"/>
+  <line x1="48" y1="210" x2="552" y2="210" stroke="#1C1917" stroke-width="2"/>
+  <line x1="300" y1="210" x2="300" y2="712" stroke="#DCD6C8" stroke-width="1.5"/>
+  <text x="84" y="156" font-family="Georgia, serif" font-size="78" font-weight="700" fill="#1C1917" letter-spacing="-2">Aa</text>
+  <text x="330" y="132" font-family="sans-serif" font-size="22" font-weight="600" fill="#1C1917">SWISS GRID</text>
+  <text x="330" y="162" font-family="monospace" font-size="14" fill="#78716C">1958 — 2026</text>
+  <circle cx="174" cy="370" r="78" fill="#DC2626"/>
+  <rect x="174" y="370" width="126" height="126" fill="#1C1917" opacity="0.9"/>
+  <g fill="#57534E">
+    <rect x="332" y="256" width="180" height="10" rx="2"/>
+    <rect x="332" y="280" width="150" height="10" rx="2" opacity="0.6"/>
+    <rect x="332" y="304" width="168" height="10" rx="2" opacity="0.6"/>
+    <rect x="332" y="328" width="120" height="10" rx="2" opacity="0.4"/>
+    <rect x="332" y="410" width="180" height="10" rx="2"/>
+    <rect x="332" y="434" width="164" height="10" rx="2" opacity="0.6"/>
+    <rect x="332" y="458" width="142" height="10" rx="2" opacity="0.6"/>
+  </g>
+  <rect x="84" y="544" width="180" height="120" fill="#E7E2D7"/>
+  <rect x="332" y="544" width="180" height="120" fill="#1C1917"/>
+  <circle cx="422" cy="604" r="32" fill="#F4F1EA"/>
+</svg>
