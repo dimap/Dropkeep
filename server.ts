@@ -12,11 +12,15 @@ import {
   testAiConnection,
 } from './server/ai.ts';
 import {
+  checkLoginRateLimit,
   clearDbPassword,
+  clearLoginFailures,
   clearSessionCookie,
   createSessionToken,
   extractAuthFromRequest,
   getAuthConfig,
+  getClientIp,
+  recordFailedLogin,
   requireAuthMiddleware,
   setDbPassword,
   setSessionCookie,
@@ -76,24 +80,16 @@ async function startServer(): Promise<void> {
   const app = express();
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    next();
+  });
   app.use(express.json({ limit: '8mb' }));
 
   // --- Healthcheck (used by Docker HEALTHCHECK) ---
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', service: 'dropkeep', timestamp: new Date().toISOString() });
-  });
-
-  // --- Lightweight Local Cover Screenshots (unguessable UUID filenames, path-confined) ---
-  app.get('/api/covers/:filename', (req, res) => {
-    const resolved = getCoverScreenshotPath(req.params.filename);
-    if (!resolved) {
-      res.status(404).end();
-      return;
-    }
-    res.setHeader('Content-Type', resolved.contentType);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-    fs.createReadStream(resolved.filePath).pipe(res);
   });
 
   // --- Auth Routes ---
@@ -116,11 +112,24 @@ async function startServer(): Promise<void> {
       res.json({ token: '', authEnabled: false });
       return;
     }
+    const clientIp = getClientIp(req);
+    const limit = checkLoginRateLimit(clientIp);
+    if (!limit.allowed) {
+      res.setHeader('Retry-After', String(limit.retryAfterSec));
+      res.status(429).json({
+        error: 'Слишком много неудачных попыток входа. Повторите попытку позже.',
+      });
+      return;
+    }
+
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!verifyMasterPassword(password)) {
+      recordFailedLogin(clientIp);
       res.status(401).json({ error: 'Неверный пароль' });
       return;
     }
+
+    clearLoginFailures(clientIp);
     const token = createSessionToken();
     setSessionCookie(req, res, token);
     res.json({ token, authEnabled: true });
@@ -128,6 +137,19 @@ async function startServer(): Promise<void> {
 
   // Protect all remaining /api/* routes when password protection is enabled
   app.use('/api', requireAuthMiddleware);
+
+  // --- Lightweight Local Cover Screenshots (authenticated, UUID filenames, path-confined) ---
+  app.get('/api/covers/:filename', (req, res) => {
+    const resolved = getCoverScreenshotPath(req.params.filename);
+    if (!resolved) {
+      res.status(404).end();
+      return;
+    }
+    res.setHeader('Content-Type', resolved.contentType);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, max-age=604800, immutable');
+    fs.createReadStream(resolved.filePath).pipe(res);
+  });
 
   app.post('/api/auth/logout', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');

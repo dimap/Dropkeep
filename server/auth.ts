@@ -63,6 +63,68 @@ export function clearDbPassword(): void {
   deleteSetting('password_hash');
 }
 
+// --- Per-IP Login Brute-Force Rate Limiter ---
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const LOGIN_MAX_FAILURES = 10;
+const LOGIN_TRACKER_MAX_KEYS = 2000;
+
+const loginFailuresByIp = new Map<string, number[]>();
+
+export function getClientIp(req: Request): string {
+  const ip = typeof req.ip === 'string' && req.ip.trim() ? req.ip.trim() : req.socket?.remoteAddress || 'unknown';
+  return ip.toLowerCase();
+}
+
+function pruneLoginTracker(now: number): void {
+  if (loginFailuresByIp.size < LOGIN_TRACKER_MAX_KEYS) return;
+  for (const [key, timestamps] of loginFailuresByIp) {
+    const recent = timestamps.filter((ts) => now - ts < LOGIN_WINDOW_MS);
+    if (recent.length === 0) {
+      loginFailuresByIp.delete(key);
+    } else {
+      loginFailuresByIp.set(key, recent);
+    }
+  }
+  while (loginFailuresByIp.size >= LOGIN_TRACKER_MAX_KEYS) {
+    const oldestKey = loginFailuresByIp.keys().next().value;
+    if (!oldestKey) break;
+    loginFailuresByIp.delete(oldestKey);
+  }
+}
+
+export function checkLoginRateLimit(ip: string, now = Date.now()): { allowed: boolean; retryAfterSec: number } {
+  const existing = loginFailuresByIp.get(ip);
+  if (!existing || existing.length === 0) {
+    return { allowed: true, retryAfterSec: 0 };
+  }
+  const recent = existing.filter((ts) => now - ts < LOGIN_WINDOW_MS);
+  if (recent.length === 0) {
+    loginFailuresByIp.delete(ip);
+    return { allowed: true, retryAfterSec: 0 };
+  }
+  if (recent.length !== existing.length) {
+    loginFailuresByIp.set(ip, recent);
+  }
+  if (recent.length >= LOGIN_MAX_FAILURES) {
+    const oldestInWindow = recent[0];
+    const retryAfterMs = Math.max(1000, LOGIN_WINDOW_MS - (now - oldestInWindow));
+    return { allowed: false, retryAfterSec: Math.ceil(retryAfterMs / 1000) };
+  }
+  return { allowed: true, retryAfterSec: 0 };
+}
+
+export function recordFailedLogin(ip: string, now = Date.now()): void {
+  pruneLoginTracker(now);
+  const existing = loginFailuresByIp.get(ip) || [];
+  const recent = existing.filter((ts) => now - ts < LOGIN_WINDOW_MS);
+  recent.push(now);
+  loginFailuresByIp.set(ip, recent);
+}
+
+export function clearLoginFailures(ip: string): void {
+  loginFailuresByIp.delete(ip);
+}
+
 export const SESSION_COOKIE_NAME = 'dropkeep_session';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
