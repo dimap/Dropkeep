@@ -1,10 +1,8 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="docs/logo-light.svg" />
-  <img alt="Dropkeep — Self-Hosted Visual Bookmark Manager" src="docs/logo-light.svg" width="360" />
-</picture>
+<img alt="Dropkeep" src="public/logo.svg" width="108" height="108" />
+
+<h1>Dropkeep</h1>
 
 <p>
   <strong>Self-hosted визуальный менеджер закладок в стиле Raindrop.io</strong><br />
