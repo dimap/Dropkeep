@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import type { Collection, NavScope, SmartFilter, SmartStats, TagCount } from '../types';
 import { getCollectionIcon } from '../utils/icons';
+import { DropkeepLogo } from './DropkeepLogo';
 
 interface SidebarProps {
   collections: Collection[];
@@ -265,14 +266,7 @@ export const Sidebar = memo(function Sidebar({
           }}
           className="flex items-center gap-2 text-left group focus:outline-none"
         >
-          <span className="w-7 h-7 rounded-lg bg-[#0B72E7] flex items-center justify-center shrink-0">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 3.2C12 3.2 6.2 10.1 6.2 14.3C6.2 17.5 8.8 20.1 12 20.1C15.2 20.1 17.8 17.5 17.8 14.3C17.8 10.1 12 3.2 12 3.2Z"
-                fill="white"
-              />
-            </svg>
-          </span>
+          <DropkeepLogo className="w-7 h-7 shrink-0" />
           <span className="text-[15px] font-bold tracking-[-0.02em] text-[#181A1F] dark:text-[#F1F3F5] whitespace-nowrap">
             Dropkeep
           </span>

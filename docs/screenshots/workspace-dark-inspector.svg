@@ -1,0 +1,217 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 740" width="1280" height="740" fill="none">
+  <defs>
+    <linearGradient id="wd-drop" x1="16" y1="2" x2="16" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B9BFF" />
+      <stop offset="100%" stop-color="#0B72E7" />
+    </linearGradient>
+    <linearGradient id="dc-hero" x1="0" y1="0" x2="352" y2="144" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0C4A6E" />
+      <stop offset="100%" stop-color="#1E3A8A" />
+    </linearGradient>
+    <clipPath id="dark-clip">
+      <rect x="0" y="0" width="1280" height="740" rx="12" />
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#dark-clip)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+    <!-- Canvas -->
+    <rect x="0" y="0" width="1280" height="740" fill="#202124" />
+
+    <!-- Left Sidebar -->
+    <rect x="0" y="0" width="240" height="740" fill="#1A1B1E" />
+    <line x1="240" y1="0" x2="240" y2="740" stroke="#2B2D32" stroke-width="1" />
+    <line x1="0" y1="54" x2="240" y2="54" stroke="#2B2D32" stroke-width="1" />
+
+    <!-- Brand -->
+    <g transform="translate(16, 13)">
+      <path d="M13 2C13 2 4.5 11.2 4.5 16.1C4.5 20.85 8.3 24.7 13 24.7C17.7 24.7 21.5 20.85 21.5 16.1C21.5 11.2 13 2 13 2Z" fill="url(#wd-drop)" />
+      <path d="M9.9 13C9.9 12.35 10.42 11.85 11.05 11.85H14.95C15.58 11.85 16.1 12.35 16.1 13V20.2C16.1 20.56 15.68 20.76 15.4 20.52L13 18.5L10.6 20.52C10.32 20.76 9.9 20.56 9.9 20.2V13Z" fill="#FFFFFF" />
+      <text x="34" y="19" fill="#F1F3F5" font-size="15" font-weight="700">Dropkeep</text>
+    </g>
+
+    <!-- Nav Items -->
+    <g font-size="13">
+      <rect x="10" y="66" width="220" height="32" rx="6" fill="#192B44" />
+      <text x="24" y="86" fill="#58A6FF" font-weight="600">Все закладки</text>
+      <text x="218" y="86" text-anchor="end" fill="#58A6FF" font-size="11.5" font-weight="600">142</text>
+
+      <text x="24" y="118" fill="#D3D7DF">Несортированные</text>
+      <text x="218" y="118" text-anchor="end" fill="#747B88" font-size="11.5">14</text>
+
+      <text x="24" y="148" fill="#D3D7DF">Избранное</text>
+      <text x="218" y="148" text-anchor="end" fill="#747B88" font-size="11.5">28</text>
+
+      <text x="24" y="178" fill="#D3D7DF">Офлайн PDF</text>
+      <text x="218" y="178" text-anchor="end" fill="#58A6FF" font-size="11.5" font-weight="600">24</text>
+
+      <line x1="16" y1="198" x2="224" y2="198" stroke="#2B2D32" stroke-width="1" />
+      <text x="16" y="218" fill="#747B88" font-size="11" font-weight="600" letter-spacing="0.6">КОЛЛЕКЦИИ</text>
+
+      <circle cx="24" cy="242" r="4" fill="#3B9BFF" />
+      <text x="36" y="246" fill="#D3D7DF">Self-Hosted и Docker</text>
+      <text x="218" y="246" text-anchor="end" fill="#747B88" font-size="11.5">46</text>
+
+      <circle cx="38" cy="272" r="3.5" fill="#06B6D4" />
+      <text x="49" y="276" fill="#A1A7B3">Homelab &amp; Сеть</text>
+      <text x="218" y="276" text-anchor="end" fill="#747B88" font-size="11.5">19</text>
+
+      <circle cx="24" cy="302" r="4" fill="#8B5CF6" />
+      <text x="36" y="306" fill="#D3D7DF">Дизайн и типографика</text>
+      <text x="218" y="306" text-anchor="end" fill="#747B88" font-size="11.5">34</text>
+
+      <circle cx="24" cy="332" r="4" fill="#F59E0B" />
+      <text x="36" y="336" fill="#D3D7DF">Разработка</text>
+      <text x="218" y="336" text-anchor="end" fill="#747B88" font-size="11.5">41</text>
+
+      <line x1="16" y1="358" x2="224" y2="358" stroke="#2B2D32" stroke-width="1" />
+      <text x="16" y="378" fill="#747B88" font-size="11" font-weight="600" letter-spacing="0.6">ТЕГИ</text>
+      <text x="20" y="402" fill="#A1A7B3">#docker</text>
+      <text x="218" y="402" text-anchor="end" fill="#747B88" font-size="11.5">32</text>
+      <text x="20" y="428" fill="#A1A7B3">#homelab</text>
+      <text x="218" y="428" text-anchor="end" fill="#747B88" font-size="11.5">24</text>
+      <text x="20" y="454" fill="#A1A7B3">#sqlite</text>
+      <text x="218" y="454" text-anchor="end" fill="#747B88" font-size="11.5">14</text>
+      <text x="20" y="480" fill="#A1A7B3">#ai</text>
+      <text x="218" y="480" text-anchor="end" fill="#747B88" font-size="11.5">11</text>
+    </g>
+
+    <!-- Center List Pane -->
+    <rect x="241" y="0" width="639" height="54" fill="#202124" />
+    <line x1="241" y1="54" x2="880" y2="54" stroke="#2B2D32" stroke-width="1" />
+    <rect x="258" y="10" width="380" height="34" rx="8" fill="#282A30" stroke="#34373E" stroke-width="1" />
+    <text x="274" y="31" fill="#8B929E" font-size="13">Поиск по закладкам...</text>
+    <rect x="572" y="15" width="60" height="24" rx="6" fill="#192B44" />
+    <text x="602" y="31" text-anchor="middle" fill="#58A6FF" font-size="11.5" font-weight="600">✦ ИИ</text>
+
+    <rect x="652" y="11" width="90" height="32" rx="7" fill="#282A30" stroke="#34373E" stroke-width="1" />
+    <text x="697" y="31" text-anchor="middle" fill="#D3D7DF" font-size="12.5">Список ▾</text>
+
+    <rect x="752" y="11" width="110" height="32" rx="7" fill="#0B72E7" />
+    <text x="807" y="31" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="600">+ Добавить</text>
+
+    <!-- Center List Rows -->
+    <g transform="translate(254, 68)">
+      <!-- Row 1 (Active) -->
+      <rect width="612" height="86" rx="8" fill="#192B44" stroke="#254C7E" stroke-width="1" />
+      <rect x="12" y="13" width="84" height="60" rx="6" fill="url(#dc-hero)" />
+      <text x="54" y="47" text-anchor="middle" fill="#7DD3FC" font-size="11" font-weight="700">DOCKER</text>
+      <text x="110" y="30" fill="#F1F3F5" font-size="14" font-weight="600">Docker Compose: справочник по профилям и томам</text>
+      <text x="110" y="50" fill="#A1A7B3" font-size="12">Официальная документация по организации сервисов, сетей и healthcheck.</text>
+      <text x="110" y="70" fill="#58A6FF" font-size="11.5">docs.docker.com · 18 ноя · PDF · #docker #selfhosted</text>
+
+      <!-- Row 2 -->
+      <g transform="translate(0, 96)">
+        <rect width="612" height="82" rx="8" fill="#24262B" />
+        <rect x="12" y="12" width="84" height="58" rx="6" fill="#1E293B" />
+        <text x="54" y="45" text-anchor="middle" fill="#38BDF8" font-family="monospace" font-size="11">WAL</text>
+        <text x="110" y="29" fill="#F1F3F5" font-size="13.5" font-weight="600">SQLite WAL в продакшене: тюнинг и бэкапы</text>
+        <text x="110" y="49" fill="#9CA3AF" font-size="12">Как ускорить параллельное чтение и избежать блокировок при записи.</text>
+        <text x="110" y="68" fill="#747B88" font-size="11.5">sqlite.org · 15 ноя · #sqlite #backend</text>
+      </g>
+
+      <!-- Row 3 -->
+      <g transform="translate(0, 186)">
+        <rect width="612" height="82" rx="8" fill="#202124" />
+        <rect x="12" y="12" width="84" height="58" rx="6" fill="#312E81" />
+        <text x="54" y="45" text-anchor="middle" fill="#C4B5FD" font-size="11" font-weight="600">CADDY</text>
+        <text x="110" y="29" fill="#F1F3F5" font-size="13.5" font-weight="600">Автоматический HTTPS с Caddy Reverse Proxy</text>
+        <text x="110" y="49" fill="#9CA3AF" font-size="12">Простой Caddyfile для домашних сервисов и сертификатов Let's Encrypt.</text>
+        <text x="110" y="68" fill="#747B88" font-size="11.5">caddyserver.com · 12 ноя · #caddy #homelab</text>
+      </g>
+
+      <!-- Row 4 -->
+      <g transform="translate(0, 276)">
+        <rect width="612" height="82" rx="8" fill="#24262B" />
+        <rect x="12" y="12" width="84" height="58" rx="6" fill="#064E3B" />
+        <text x="54" y="45" text-anchor="middle" fill="#6EE7B7" font-size="11" font-weight="700">PDF</text>
+        <text x="110" y="29" fill="#F1F3F5" font-size="13.5" font-weight="600">Gotenberg 8: рендеринг веб-страниц в PDF</text>
+        <text x="110" y="49" fill="#9CA3AF" font-size="12">API для Chromium-снимков страниц и генерации лёгких WebP-обложек.</text>
+        <text x="110" y="68" fill="#747B88" font-size="11.5">gotenberg.dev · 8 ноя · PDF · #pdf #docker</text>
+      </g>
+
+      <!-- Row 5 -->
+      <g transform="translate(0, 366)">
+        <rect width="612" height="82" rx="8" fill="#202124" />
+        <rect x="12" y="12" width="84" height="58" rx="6" fill="#451A03" />
+        <text x="54" y="45" text-anchor="middle" fill="#FCD34D" font-size="16">✦</text>
+        <text x="110" y="29" fill="#F1F3F5" font-size="13.5" font-weight="600">Подключение Ollama и OpenRouter к self-hosted</text>
+        <text x="110" y="49" fill="#9CA3AF" font-size="12">Единый OpenAI-совместимый эндпоинт для локальных и облачных LLM.</text>
+        <text x="110" y="68" fill="#747B88" font-size="11.5">ollama.com · 4 ноя · #ai #ollama</text>
+      </g>
+
+      <!-- Row 6 -->
+      <g transform="translate(0, 456)">
+        <rect width="612" height="82" rx="8" fill="#24262B" />
+        <rect x="12" y="12" width="84" height="58" rx="6" fill="#27272A" />
+        <text x="54" y="45" text-anchor="middle" fill="#E4E4E7" font-size="14" font-weight="700">Aa</text>
+        <text x="110" y="29" fill="#F1F3F5" font-size="13.5" font-weight="600">Типографика и плотность списков в веб-приложениях</text>
+        <text x="110" y="49" fill="#9CA3AF" font-size="12">Разбор сеток, отступов и читаемости в интерфейсах с сотнями записей.</text>
+        <text x="110" y="68" fill="#747B88" font-size="11.5">practicaltypography.com · 1 ноя · #design #ui</text>
+      </g>
+    </g>
+
+    <!-- Right Split-View Inspector Panel -->
+    <rect x="880" y="0" width="400" height="740" fill="#222429" />
+    <line x1="880" y1="0" x2="880" y2="740" stroke="#30333A" stroke-width="1" />
+    <line x1="880" y1="54" x2="1280" y2="54" stroke="#30333A" stroke-width="1" />
+
+    <!-- Inspector Tabs -->
+    <rect x="900" y="12" width="204" height="30" rx="7" fill="#2B2E35" />
+    <rect x="903" y="15" width="102" height="24" rx="5" fill="#3A3E47" />
+    <text x="954" y="31" text-anchor="middle" fill="#FFFFFF" font-size="12.5" font-weight="600">Редактировать</text>
+    <text x="1054" y="31" text-anchor="middle" fill="#A1A7B3" font-size="12.5">Чтение</text>
+    <text x="1254" y="32" text-anchor="middle" fill="#8B929E" font-size="16">✕</text>
+
+    <!-- Inspector Body -->
+    <g transform="translate(904, 72)">
+      <!-- Cover -->
+      <rect width="352" height="140" rx="9" fill="url(#dc-hero)" stroke="#34373E" />
+      <rect x="24" y="32" width="104" height="76" rx="8" fill="#FFFFFF" fill-opacity="0.14" />
+      <rect x="142" y="32" width="186" height="28" rx="6" fill="#FFFFFF" fill-opacity="0.2" />
+      <rect x="142" y="72" width="136" height="28" rx="6" fill="#FFFFFF" fill-opacity="0.12" />
+
+      <!-- Title Input -->
+      <text x="0" y="164" fill="#9CA3AF" font-size="11.5" font-weight="500">Название</text>
+      <rect x="0" y="172" width="352" height="34" rx="7" fill="#2B2D33" stroke="#3A3D46" />
+      <text x="12" y="193" fill="#F1F3F5" font-size="13">Docker Compose: справочник по профилям</text>
+
+      <!-- URL Input -->
+      <text x="0" y="226" fill="#9CA3AF" font-size="11.5" font-weight="500">URL</text>
+      <rect x="0" y="234" width="352" height="32" rx="7" fill="#2B2D33" stroke="#3A3D46" />
+      <text x="12" y="254" fill="#58A6FF" font-size="12.5">https://docs.docker.com/compose/</text>
+
+      <!-- Collection & Tags -->
+      <text x="0" y="286" fill="#9CA3AF" font-size="11.5" font-weight="500">Коллекция и теги</text>
+      <rect x="0" y="294" width="352" height="32" rx="7" fill="#2B2D33" stroke="#3A3D46" />
+      <text x="12" y="314" fill="#F1F3F5" font-size="12.5">Self-Hosted и Docker</text>
+      <text x="336" y="314" text-anchor="end" fill="#8B929E" font-size="12">▾</text>
+
+      <rect x="0" y="336" width="66" height="24" rx="5" fill="#192B44" />
+      <text x="33" y="352" text-anchor="middle" fill="#58A6FF" font-size="11.5">#docker</text>
+      <rect x="74" y="336" width="84" height="24" rx="5" fill="#192B44" />
+      <text x="116" y="352" text-anchor="middle" fill="#58A6FF" font-size="11.5">#selfhosted</text>
+      <rect x="166" y="336" width="64" height="24" rx="5" fill="#192B44" />
+      <text x="198" y="352" text-anchor="middle" fill="#58A6FF" font-size="11.5">#devops</text>
+
+      <!-- AI TL;DR Box -->
+      <rect x="0" y="378" width="352" height="156" rx="9" fill="#1B2536" stroke="#28426A" />
+      <text x="14" y="401" fill="#58A6FF" font-size="12.5" font-weight="600">✦ Краткая выжимка (TL;DR)</text>
+      <text x="14" y="424" fill="#E2E8F0" font-size="12">• Профили позволяют включать опциональные</text>
+      <text x="24" y="440" fill="#E2E8F0" font-size="12">сервисы (например, Chromium) одной флагом.</text>
+      <text x="14" y="464" fill="#E2E8F0" font-size="12">• Именованные тома изолируют данные SQLite</text>
+      <text x="24" y="480" fill="#E2E8F0" font-size="12">и сохраняют их при пересборке контейнера.</text>
+      <text x="14" y="504" fill="#E2E8F0" font-size="12">• Healthcheck автоматически контролирует API.</text>
+
+      <!-- Offline PDF Box -->
+      <rect x="0" y="550" width="352" height="44" rx="8" fill="#272A30" stroke="#34373E" />
+      <text x="14" y="576" fill="#E2E8F0" font-size="12.5" font-weight="500">Офлайн PDF-снимок · 420 КБ</text>
+      <rect x="266" y="559" width="76" height="26" rx="6" fill="#0B72E7" />
+      <text x="304" y="576" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="600">Открыть</text>
+
+      <!-- Save Button -->
+      <rect x="0" y="610" width="352" height="36" rx="8" fill="#0B72E7" />
+      <text x="176" y="633" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="600">Сохранить изменения</text>
+    </g>
+  </g>
+  <rect x="0.5" y="0.5" width="1279" height="739" rx="12" stroke="#30333A" stroke-width="1" />
+</svg>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Lock } from 'lucide-react';
 import { api, setAuthToken } from '../api';
+import { DropkeepLogo } from './DropkeepLogo';
 
 interface AuthGateProps {
   onAuthenticated: () => void;
@@ -34,9 +34,7 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
         className="w-full max-w-[360px] rounded-xl bg-white dark:bg-[#222429] border border-[#E6E8EC] dark:border-[#34373E] p-6 space-y-4"
       >
         <div className="flex items-center gap-2.5">
-          <span className="w-8 h-8 rounded-lg bg-[#0B72E7] flex items-center justify-center text-white">
-            <Lock className="w-4 h-4" />
-          </span>
+          <DropkeepLogo className="w-9 h-9 shrink-0" />
           <div>
             <h1 className="text-[16px] font-bold text-[#181A1F] dark:text-[#F1F3F5]">Dropkeep</h1>
             <p className="text-[12px] text-[#5F6672] dark:text-[#A1A7B3]">
