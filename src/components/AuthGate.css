@@ -1,0 +1,71 @@
+.auth-screen {
+  color-scheme: light;
+  background:
+    radial-gradient(ellipse at 50% 66%, #deebff, transparent 62%),
+    radial-gradient(ellipse at 95% 0%, #e9e2fc, transparent 48%),
+    radial-gradient(ellipse at 0% 100%, #e0f2ee, transparent 47%),
+    #f0f5fc;
+}
+
+.dark .auth-screen {
+  color-scheme: dark;
+  background:
+    radial-gradient(ellipse at 50% 66%, #1b2c47, transparent 62%),
+    radial-gradient(ellipse at 95% 0%, #281f40, transparent 48%),
+    radial-gradient(ellipse at 0% 100%, #172e33, transparent 47%),
+    #111925;
+}
+
+.auth-card {
+  box-shadow: 0 20px 64px light-dark(#315a9630, #05081180);
+}
+
+.auth-folders {
+  --folder-blue: light-dark(#478ce4, #6ba7f8);
+  --folder-violet: light-dark(#9268d5, #b18cef);
+  --folder-mint: light-dark(#2e9d89, #58c4ac);
+  --folder-amber: light-dark(#b77c2b, #e6ae61);
+  --folder-pink: light-dark(#c76591, #ed8bb6);
+}
+
+.auth-folder {
+  position: absolute;
+  width: min(var(--folder-size), 18vw);
+  height: auto;
+  translate: -50% -50%;
+  rotate: var(--folder-angle);
+  fill: color-mix(in srgb, currentColor 18%, transparent);
+  opacity: 0.72;
+  animation: auth-folder-float 18s ease-in-out infinite alternate;
+}
+
+.auth-folder[data-color='blue'] { color: var(--folder-blue); }
+.auth-folder[data-color='violet'] { color: var(--folder-violet); }
+.auth-folder[data-color='mint'] { color: var(--folder-mint); }
+.auth-folder[data-color='amber'] { color: var(--folder-amber); }
+.auth-folder[data-color='pink'] { color: var(--folder-pink); }
+
+.auth-folder:nth-child(even) {
+  animation-direction: alternate-reverse;
+}
+
+.auth-folders[data-paused='true'] .auth-folder {
+  animation-play-state: paused;
+}
+
+@keyframes auth-folder-float {
+  from { transform: translate3d(-8px, 22px, 0) rotate(-7deg); }
+  to { transform: translate3d(12px, -24px, 0) rotate(8deg); }
+}
+
+@media (max-width: 39.99rem) {
+  .auth-folder:nth-child(n + 7) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-folder {
+    animation-name: none;
+  }
+}
