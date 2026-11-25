@@ -23,13 +23,13 @@
 ## Скриншоты
 
 ### Светлая тема — сетка карточек, коллекции и умные фильтры
-![Dropkeep — Светлая тема и сетка карточек](docs/screenshots/workspace-light.svg)
+![Dropkeep — Светлая тема и сетка карточек](docs/screenshots/workspace-light.png)
 
 ### Тёмная тема — список, инспектор, краткая выжимка (TL;DR) и офлайн-PDF
-![Dropkeep — Тёмная тема и панель инспектора](docs/screenshots/workspace-dark-inspector.svg)
+![Dropkeep — Тёмная тема и панель инспектора](docs/screenshots/workspace-dark-inspector.png)
 
 ### Быстрое добавление закладки — автовставка URL, подсказки ИИ и PDF-снимок
-![Dropkeep — Окно добавления закладки](docs/screenshots/add-bookmark-ai.svg)
+![Dropkeep — Окно добавления закладки](docs/screenshots/add-bookmark-ai.png)
 
 ---
 
