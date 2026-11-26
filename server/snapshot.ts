@@ -16,10 +16,43 @@ const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,80}$/;
 const MAX_PDF_BYTES = 25 * 1024 * 1024; // 25 MB cap
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB cap for embedded cover image
 
+export type PdfEngineStatus = 'chromium' | 'chromium_unreachable' | 'builtin';
+
+let cachedGotenbergCheck: { status: PdfEngineStatus; checkedAt: number } | null = null;
+const GOTENBERG_HEALTH_TTL_MS = 15_000;
+
 export function getActivePdfEngine(): 'chromium' | 'builtin' {
   return process.env.GOTENBERG_URL && process.env.GOTENBERG_URL.trim().length > 0
     ? 'chromium'
     : 'builtin';
+}
+
+export async function checkGotenbergHealth(): Promise<PdfEngineStatus> {
+  const gotenbergBase = process.env.GOTENBERG_URL?.trim();
+  if (!gotenbergBase) return 'builtin';
+
+  const now = Date.now();
+  if (cachedGotenbergCheck && now - cachedGotenbergCheck.checkedAt < GOTENBERG_HEALTH_TTL_MS) {
+    return cachedGotenbergCheck.status;
+  }
+
+  try {
+    const healthUrl = new URL('/health', gotenbergBase);
+    if (healthUrl.protocol !== 'http:' && healthUrl.protocol !== 'https:') {
+      cachedGotenbergCheck = { status: 'chromium_unreachable', checkedAt: now };
+      return 'chromium_unreachable';
+    }
+    const res = await fetch(healthUrl.toString(), {
+      method: 'GET',
+      signal: AbortSignal.timeout(1500),
+    });
+    const status: PdfEngineStatus = res.ok ? 'chromium' : 'chromium_unreachable';
+    cachedGotenbergCheck = { status, checkedAt: now };
+    return status;
+  } catch {
+    cachedGotenbergCheck = { status: 'chromium_unreachable', checkedAt: now };
+    return 'chromium_unreachable';
+  }
 }
 
 function resolveSnapshotPath(bookmarkId: string): string {

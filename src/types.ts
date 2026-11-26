@@ -126,6 +126,7 @@ export interface SmartStats {
   dbSizeBytes: number;
   snapshotsSizeBytes: number;
   pdfEngine?: 'chromium' | 'builtin';
+  pdfEngineStatus?: 'chromium' | 'chromium_unreachable' | 'builtin';
   dbPath: string;
 }
 

@@ -68,6 +68,7 @@ import {
   saveUploadedCoverImage,
 } from './server/screenshot.ts';
 import {
+  checkGotenbergHealth,
   generateBookmarkPdfSnapshot,
   getSnapshotFilePath,
   removeSnapshotFile,
@@ -204,11 +205,17 @@ async function startServer(): Promise<void> {
   });
 
   // --- Bootstrap / Sidebar Data ---
-  app.get('/api/workspace', (_req, res) => {
+  app.get('/api/workspace', async (_req, res) => {
+    const baseStats = getSmartStats();
+    const pdfEngineStatus = await checkGotenbergHealth();
     res.json({
       collections: listCollections(),
       tags: listTags(),
-      stats: getSmartStats(),
+      stats: {
+        ...baseStats,
+        pdfEngine: pdfEngineStatus === 'chromium' ? 'chromium' : 'builtin',
+        pdfEngineStatus,
+      },
       aiConfigured: getAiStatus().configured,
     });
   });

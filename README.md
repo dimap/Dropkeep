@@ -110,8 +110,8 @@ services:
       # Опционально: защита мастер-паролем
       # - APP_PASSWORD=your-strong-password
       # - SESSION_SECRET=your-long-random-hex-secret
-      # Опционально: полные PDF и скриншоты обложек через Gotenberg
-      # - GOTENBERG_URL=http://gotenberg:3000
+      # Полные PDF и скриншоты обложек через Gotenberg (удалите вместе с сервисом gotenberg ниже, если не нужен)
+      - GOTENBERG_URL=http://gotenberg:3000
       # Опционально: собственный OpenAI-совместимый ИИ (умный поиск, TL;DR, теги, описание YouTube)
       # - AI_API_URL=https://openrouter.ai/api/v1
       # - AI_API_KEY=sk-...
@@ -119,16 +119,11 @@ services:
     volumes:
       - dropkeep_data:/data
 
-  # Опциональный Chromium для полных PDF-снимков и скриншотов обложек
+  # Chromium для полных PDF-снимков и скриншотов обложек (можно убрать, если достаточно встроенного PDF-движка)
   gotenberg:
     image: gotenberg/gotenberg:8
     container_name: dropkeep-gotenberg
-    profiles: ["full-pdf"]
     restart: unless-stopped
-    command:
-      - "gotenberg"
-      - "--chromium-disable-javascript=false"
-      - "--api-timeout=30s"
 
 volumes:
   dropkeep_data:
@@ -138,11 +133,7 @@ volumes:
 Запустите контейнер:
 
 ```bash
-# Базовый запуск
 docker compose up -d
-
-# Или с Chromium (Gotenberg) для полных PDF-снимков и скриншотов обложек
-GOTENBERG_URL=http://gotenberg:3000 docker compose --profile full-pdf up -d
 ```
 
 #### Быстрый запуск одной командой (`docker run`)
@@ -184,11 +175,8 @@ git clone https://github.com/dimap/Dropkeep.git dropkeep
 cd dropkeep
 cp .env.example .env
 
-# Лёгкий запуск (x86_64 / ARM64 / Raspberry Pi)
+# Запуск (x86_64 / ARM64 / Raspberry Pi, вместе с Gotenberg)
 docker compose up -d --build
-
-# Или с Chromium (Gotenberg) для полных PDF-снимков и скриншотов обложек
-GOTENBERG_URL=http://gotenberg:3000 docker compose --profile full-pdf up -d --build
 ```
 
 ---

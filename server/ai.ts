@@ -118,18 +118,46 @@ function normalizeTag(raw: string): string {
     .slice(0, 40);
 }
 
-function parseJsonObjectLoose(rawText: string): Record<string, unknown> | null {
-  const trimmed = rawText.trim();
-  if (!trimmed) return null;
+function stripThinkingBlocks(rawText: string): string {
+  return rawText
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^[\s\S]*<\/think>/i, '')
+    .trim();
+}
 
-  const unfenced = trimmed
+function parseJsonObjectLoose(rawText: string): Record<string, unknown> | null {
+  const cleaned = stripThinkingBlocks(rawText);
+  if (!cleaned) return null;
+
+  const unfenced = cleaned
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim();
 
-  const candidates = [unfenced];
+  const candidates: string[] = [unfenced];
+
+  // Try extracting fenced JSON blocks first if model added surrounding prose
+  const fencedMatches = Array.from(cleaned.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
+  for (let i = fencedMatches.length - 1; i >= 0; i--) {
+    const inner = fencedMatches[i][1]?.trim();
+    if (inner) candidates.push(inner);
+  }
+
+  // Try greedy outer braces and also scan from the last '{' backwards
   const objMatch = unfenced.match(/\{[\s\S]*\}/);
   if (objMatch) candidates.push(objMatch[0]);
+
+  const lastClose = unfenced.lastIndexOf('}');
+  if (lastClose !== -1) {
+    let searchFrom = lastClose;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const openIdx = unfenced.lastIndexOf('{', searchFrom);
+      if (openIdx === -1) break;
+      candidates.push(unfenced.slice(openIdx, lastClose + 1));
+      if (openIdx === 0) break;
+      searchFrom = openIdx - 1;
+    }
+  }
 
   for (const candidate of candidates) {
     try {
@@ -199,41 +227,145 @@ function buildCollectionPaths(
   });
 }
 
+function normalizeCollectionLabel(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/^[-•*]\s+/, '')
+    .replace(/^\[?\d+\]?[.):-]?\s+/, '')
+    .replace(/^["'«`]+|["'»`.,;]+$/g, '')
+    .replace(/\s*\/\s*/g, ' / ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function stripNonWordPrefix(raw: string): string {
+  return raw.replace(/^[^\p{L}\p{N}]+/gu, '').trim();
+}
+
 function matchCollectionFromModelValue(
   rawChoice: unknown,
   collectionEntries: Array<{ id: string; title: string; fullPath: string }>
 ): { id: string; title: string } | null {
-  if (typeof rawChoice !== 'string') return null;
-  const cleaned = rawChoice
-    .trim()
-    .replace(/^["'«]+|["'»]+$/g, '')
-    .trim();
-  if (!cleaned) return null;
+  if (collectionEntries.length === 0 || rawChoice === null || rawChoice === undefined) {
+    return null;
+  }
 
-  const lower = cleaned.toLowerCase();
+  // 1. Direct numeric index (1-based)
+  if (typeof rawChoice === 'number' && Number.isInteger(rawChoice)) {
+    const byIdx = collectionEntries[rawChoice - 1];
+    if (byIdx) return { id: byIdx.id, title: byIdx.fullPath };
+    return null;
+  }
+
+  if (typeof rawChoice !== 'string') return null;
+
+  const trimmed = rawChoice.trim();
+  if (!trimmed) return null;
+
+  // 2. Numeric string like "2", "[2]", "#2", or "[2] Работа / Инструменты"
+  const leadingNum = trimmed.match(/^\[?#?(\d{1,3})\]?(?:[.):-]|\s|$)/);
+  if (leadingNum) {
+    const idx = Number.parseInt(leadingNum[1], 10);
+    if (idx >= 1 && idx <= collectionEntries.length) {
+      const byIdx = collectionEntries[idx - 1];
+      if (byIdx) return { id: byIdx.id, title: byIdx.fullPath };
+    }
+  }
+
+  // 3. Exact ID match
+  const byId = collectionEntries.find((c) => c.id === trimmed);
+  if (byId) return { id: byId.id, title: byId.fullPath };
+
+  const lower = normalizeCollectionLabel(trimmed);
   if (
+    !lower ||
     lower === 'null' ||
     lower === 'none' ||
     lower === 'нет' ||
     lower === 'несортированные' ||
-    lower === 'unsorted'
+    lower === 'unsorted' ||
+    lower === 'без коллекции'
   ) {
     return null;
   }
 
-  // 1. Exact fullPath match
-  const exactPath = collectionEntries.find((c) => c.fullPath.toLowerCase() === lower);
+  const lowerNoEmoji = stripNonWordPrefix(lower);
+
+  // 4. Exact normalized fullPath match
+  const exactPath = collectionEntries.find(
+    (c) => normalizeCollectionLabel(c.fullPath) === lower
+  );
   if (exactPath) return { id: exactPath.id, title: exactPath.fullPath };
 
-  // 2. Exact title match
-  const exactTitle = collectionEntries.find((c) => c.title.toLowerCase() === lower);
+  // 5. Exact normalized title match (with or without leading emoji)
+  const exactTitle = collectionEntries.find((c) => {
+    const normTitle = normalizeCollectionLabel(c.title);
+    return normTitle === lower || (lowerNoEmoji && stripNonWordPrefix(normTitle) === lowerNoEmoji);
+  });
   if (exactTitle) return { id: exactTitle.id, title: exactTitle.fullPath };
 
-  // 3. Leaf segment match if model returned "Parent / Child" with slight spacing diff
-  const leaf = lower.split('/').pop()?.trim() || '';
-  if (leaf) {
-    const byLeaf = collectionEntries.find((c) => c.title.toLowerCase() === leaf);
+  // 6. Leaf segment match if model returned "Parent / Child" or "Parent > Child"
+  const leafRaw = lower.split(/[/>→]+/).pop()?.trim() || '';
+  const leafNoEmoji = stripNonWordPrefix(leafRaw);
+  if (leafRaw) {
+    const byLeaf = collectionEntries.find((c) => {
+      const normTitle = normalizeCollectionLabel(c.title);
+      return (
+        normTitle === leafRaw ||
+        (leafNoEmoji && stripNonWordPrefix(normTitle) === leafNoEmoji)
+      );
+    });
     if (byLeaf) return { id: byLeaf.id, title: byLeaf.fullPath };
+  }
+
+  // 7. Partial/contains match if unambiguous (handles slight wording/emoji differences)
+  if (lowerNoEmoji.length >= 3) {
+    const containsMatch = collectionEntries.find((c) => {
+      const normTitle = stripNonWordPrefix(normalizeCollectionLabel(c.title));
+      const normPath = stripNonWordPrefix(normalizeCollectionLabel(c.fullPath));
+      return (
+        (normTitle.length >= 3 && (normTitle.includes(lowerNoEmoji) || lowerNoEmoji.includes(normTitle))) ||
+        (normPath.length >= 3 && normPath.includes(lowerNoEmoji))
+      );
+    });
+    if (containsMatch) return { id: containsMatch.id, title: containsMatch.fullPath };
+  }
+
+  return null;
+}
+
+function matchCollectionFromParsedObject(
+  parsedObj: Record<string, unknown> | null,
+  rawContent: string,
+  allowRawFallback: boolean,
+  collectionEntries: Array<{ id: string; title: string; fullPath: string }>
+): { id: string; title: string } | null {
+  if (collectionEntries.length === 0) return null;
+
+  if (parsedObj) {
+    const candidates = [
+      parsedObj.collection_index,
+      parsedObj.collection_idx,
+      parsedObj.collection,
+      parsedObj.collection_id,
+      parsedObj.collectionId,
+      parsedObj.category,
+      parsedObj.folder,
+      parsedObj.index,
+    ];
+    for (const candidate of candidates) {
+      const matched = matchCollectionFromModelValue(candidate, collectionEntries);
+      if (matched) return matched;
+    }
+  }
+
+  if (allowRawFallback) {
+    const stripped = stripThinkingBlocks(rawContent)
+      .replace(/^```(?:json|text)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    return matchCollectionFromModelValue(stripped, collectionEntries);
   }
 
   return null;
@@ -250,10 +382,27 @@ function sanitizeExcerpt(raw: unknown): string | null {
   return cleaned.length >= 8 ? cleaned : null;
 }
 
+function extractMessageText(rawContent: unknown): string {
+  if (typeof rawContent === 'string') return rawContent;
+  if (Array.isArray(rawContent)) {
+    return rawContent
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && 'text' in part) {
+          return String((part as { text?: unknown }).text || '');
+        }
+        return '';
+      })
+      .join('');
+  }
+  return '';
+}
+
 async function callOpenAiCompatibleChat(
   messages: Array<{ role: 'system' | 'user'; content: string }>,
-  maxTokens = 260,
-  timeoutMs = 25_000
+  maxTokens = 450,
+  timeoutMs = 25_000,
+  options?: { allowReasoningOnly?: boolean }
 ): Promise<{ content: string; model: string }> {
   const { apiUrl, apiKey, model } = getAiConfig();
   if (!apiUrl || !model) {
@@ -300,10 +449,25 @@ async function callOpenAiCompatibleChat(
   }
 
   const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string | null } }>;
+    choices?: Array<{
+      finish_reason?: string | null;
+      message?: {
+        content?: unknown;
+        reasoning_content?: unknown;
+        reasoning?: unknown;
+      };
+    }>;
   };
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
+  const choice = data.choices?.[0];
+  const content = extractMessageText(choice?.message?.content).trim();
+  const reasoning = extractMessageText(
+    choice?.message?.reasoning_content ?? choice?.message?.reasoning
+  ).trim();
+
+  if (!content) {
+    if (options?.allowReasoningOnly && (reasoning || choice)) {
+      return { content: reasoning || 'OK', model };
+    }
     throw new Error('ИИ-модель вернула пустой ответ');
   }
 
@@ -380,9 +544,10 @@ export async function suggestBookmarkEnrichment(
   }
 
   if (wantCollection) {
+    jsonShapeParts.push('"collection_index": 1');
     jsonShapeParts.push('"collection": "exact existing collection path or null"');
     rules.push(
-      'For "collection": choose the single best-fitting collection strictly from the provided Existing collections list (return its exact path string). If none clearly fits, return null. Never invent new collection names.'
+      'For "collection_index" and "collection": choose the single best-fitting collection from the numbered Existing collections list (return its 1-based integer number in "collection_index" and its exact path in "collection"). Always prefer picking the closest relevant or broader matching folder instead of null; return null ONLY if the Existing collections list is empty or literally no folder is even loosely related. Never invent new collection names.'
     );
   }
 
@@ -399,7 +564,9 @@ export async function suggestBookmarkEnrichment(
   if (wantCollection) {
     userLines.push(
       collectionEntries.length > 0
-        ? `Existing collections:\n${collectionEntries.map((c) => `- ${c.fullPath}`).join('\n')}`
+        ? `Existing collections (choose the closest matching number):\n${collectionEntries
+            .map((c, idx) => `[${idx + 1}] ${c.fullPath}`)
+            .join('\n')}`
         : 'Existing collections: (none)'
     );
     userLines.push('');
@@ -415,7 +582,7 @@ export async function suggestBookmarkEnrichment(
   userLines.push('Bookmark to analyze:');
   userLines.push(pageSummaryParts.join('\n'));
 
-  const maxTokens = wantExcerpt ? 320 : 140;
+  const maxTokens = wantExcerpt ? 900 : 500;
   const { content, model } = await callOpenAiCompatibleChat(
     [
       { role: 'system', content: rules.join('\n') },
@@ -436,10 +603,14 @@ export async function suggestBookmarkEnrichment(
     tagResult = finalizeTags(rawTags, existingSet);
   }
 
-  const matchedCol =
-    wantCollection && parsedObj
-      ? matchCollectionFromModelValue(parsedObj.collection, collectionEntries)
-      : null;
+  const matchedCol = wantCollection
+    ? matchCollectionFromParsedObject(
+        parsedObj,
+        content,
+        !wantExcerpt && !wantTags,
+        collectionEntries
+      )
+    : null;
 
   const cleanExcerpt =
     wantExcerpt && parsedObj ? sanitizeExcerpt(parsedObj.excerpt) : null;
@@ -476,8 +647,10 @@ export async function suggestTagsWithAi(input: SuggestTagsInput): Promise<Sugges
 export async function testAiConnection(): Promise<{ ok: boolean; model: string; latencyMs: number }> {
   const started = Date.now();
   const { model } = await callOpenAiCompatibleChat(
-    [{ role: 'user', content: 'Reply with OK' }],
-    8
+    [{ role: 'user', content: 'Reply with OK.' }],
+    256,
+    25_000,
+    { allowReasoningOnly: true }
   );
   return {
     ok: true,
@@ -573,7 +746,7 @@ export async function smartSearchBookmarksWithAi(input: {
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    520,
+    1100,
     35_000
   );
 
@@ -666,7 +839,7 @@ export async function summarizeBookmarkWithAi(input: {
       { role: 'system', content: systemPrompt },
       { role: 'user', content: parts.join('\n\n') },
     ],
-    560,
+    1100,
     35_000
   );
 
@@ -752,7 +925,7 @@ export async function summarizeYouTubeExcerptWithAi(input: {
       { role: 'system', content: systemPrompt },
       { role: 'user', content: parts.join('\n\n') },
     ],
-    260,
+    700,
     22_000
   );
 

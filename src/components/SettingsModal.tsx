@@ -94,8 +94,8 @@ const DOCKER_COMPOSE_SNIPPET = `services:
     environment:
       - NODE_ENV=production
       - DATA_DIR=/data
-      # Для полных визуальных PDF-снимков страниц (с профилем full-pdf):
-      - GOTENBERG_URL=\${GOTENBERG_URL:-}
+      # Для полных визуальных PDF-снимков и скриншотов обложек (удалите, если не нужен Gotenberg):
+      - GOTENBERG_URL=http://gotenberg:3000
       # Своя OpenAI-совместимая ИИ-модель (OpenAI / OpenRouter / Ollama / vLLM):
       - AI_API_URL=\${AI_API_URL:-}
       - AI_API_KEY=\${AI_API_KEY:-}
@@ -105,10 +105,10 @@ const DOCKER_COMPOSE_SNIPPET = `services:
     volumes:
       - dropkeep_data:/data
 
-  # Опциональный Chromium-рендерер для полного PDF-снимка страницы со стилями:
+  # Chromium-рендерер для полных PDF-снимков и скриншотов обложек (можно убрать, если не нужен):
   gotenberg:
     image: gotenberg/gotenberg:8
-    profiles: ["full-pdf"]
+    container_name: dropkeep-gotenberg
     restart: unless-stopped
 
 volumes:
@@ -1224,11 +1224,17 @@ export function SettingsModal({
                   </div>
                   <div className="text-[12px] text-[#5F6672] dark:text-[#A1A7B3]">
                     PDF-движок:{' '}
-                    <strong className="text-[#181A1F] dark:text-[#F1F3F5] font-medium">
-                      {stats.pdfEngine === 'chromium'
-                        ? 'Полная страница (Chromium / Gotenberg)'
-                        : 'Встроенный (статья + обложка)'}
-                    </strong>
+                    {stats.pdfEngineStatus === 'chromium_unreachable' ? (
+                      <strong className="text-amber-600 dark:text-amber-400 font-medium">
+                        Встроенный (Gotenberg недоступен по GOTENBERG_URL)
+                      </strong>
+                    ) : (
+                      <strong className="text-[#181A1F] dark:text-[#F1F3F5] font-medium">
+                        {stats.pdfEngine === 'chromium'
+                          ? 'Полная страница (Chromium / Gotenberg · подключён)'
+                          : 'Встроенный (статья + обложка)'}
+                      </strong>
+                    )}
                     {' · '}
                     Том данных: <code className="font-mono">/data</code>
                   </div>
