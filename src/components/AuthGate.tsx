@@ -1,23 +1,54 @@
-import { ArrowRight, Eye, EyeOff, Folder, Pause, Play } from 'lucide-react';
+import {
+  Archive,
+  ArrowRight,
+  Bookmark,
+  BookOpen,
+  Cloud,
+  Eye,
+  EyeOff,
+  FileText,
+  Film,
+  Folder,
+  Heart,
+  Image,
+  Pause,
+  Play,
+  Sparkles,
+  Star,
+  StickyNote,
+  Tag,
+  type LucideIcon,
+} from 'lucide-react';
 import { useState, type CSSProperties, type FormEvent } from 'react';
 import { api, setAuthToken } from '../api';
 import { DropkeepLogo } from './DropkeepLogo';
 import './AuthGate.css';
 
-const backgroundFolders = [
-  { x: 12, y: 23, size: 94, angle: -19, color: 'blue', duration: 16, delay: -3 },
-  { x: 80, y: 21, size: 76, angle: 15, color: 'violet', duration: 19, delay: -8 },
-  { x: 17, y: 78, size: 76, angle: 15, color: 'mint', duration: 18, delay: -5 },
-  { x: 78, y: 82, size: 100, angle: -18, color: 'blue', duration: 20, delay: -11 },
-  { x: 43, y: 14, size: 43, angle: 23, color: 'amber', duration: 17, delay: -7 },
-  { x: 43, y: 91, size: 57, angle: 17, color: 'pink', duration: 19, delay: -13 },
-  { x: 26, y: 40, size: 48, angle: 12, color: 'pink', duration: 17, delay: -2 },
-  { x: 94, y: 44, size: 104, angle: -16, color: 'mint', duration: 21, delay: -9 },
-  { x: 68, y: 10, size: 59, angle: -24, color: 'mint', duration: 18, delay: -11 },
-  { x: 8, y: 57, size: 43, angle: -12, color: 'violet', duration: 16, delay: -6 },
-  { x: 73, y: 55, size: 53, angle: 23, color: 'amber', duration: 20, delay: -8 },
-  { x: 26, y: 94, size: 44, angle: -26, color: 'blue', duration: 16, delay: -1 },
-  { x: 93, y: 68, size: 39, angle: 17, color: 'pink', duration: 18, delay: -6 },
+interface BackgroundGlyph {
+  icon: LucideIcon;
+  x: number;
+  y: number;
+  size: number;
+  angle: number;
+  color: 'blue' | 'violet' | 'mint' | 'amber' | 'pink';
+  duration: number;
+  delay: number;
+}
+
+const backgroundGlyphs: BackgroundGlyph[] = [
+  { icon: Folder, x: 12, y: 23, size: 94, angle: -19, color: 'blue', duration: 16, delay: -3 },
+  { icon: Bookmark, x: 80, y: 21, size: 76, angle: 15, color: 'violet', duration: 19, delay: -8 },
+  { icon: Tag, x: 17, y: 78, size: 76, angle: 15, color: 'mint', duration: 18, delay: -5 },
+  { icon: BookOpen, x: 78, y: 82, size: 96, angle: -18, color: 'blue', duration: 20, delay: -11 },
+  { icon: Star, x: 43, y: 14, size: 46, angle: 23, color: 'amber', duration: 17, delay: -7 },
+  { icon: Sparkles, x: 43, y: 91, size: 57, angle: 17, color: 'pink', duration: 19, delay: -13 },
+  { icon: Heart, x: 26, y: 40, size: 48, angle: 12, color: 'pink', duration: 17, delay: -2 },
+  { icon: FileText, x: 94, y: 44, size: 98, angle: -16, color: 'mint', duration: 21, delay: -9 },
+  { icon: Cloud, x: 68, y: 10, size: 62, angle: -24, color: 'mint', duration: 18, delay: -11 },
+  { icon: Image, x: 8, y: 57, size: 48, angle: -12, color: 'violet', duration: 16, delay: -6 },
+  { icon: StickyNote, x: 73, y: 55, size: 54, angle: 23, color: 'amber', duration: 20, delay: -8 },
+  { icon: Archive, x: 26, y: 94, size: 48, angle: -26, color: 'blue', duration: 16, delay: -1 },
+  { icon: Film, x: 93, y: 68, size: 44, angle: 17, color: 'pink', duration: 18, delay: -6 },
 ];
 
 interface AuthGateProps {
@@ -55,8 +86,8 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
   return (
     <main className="auth-screen relative isolate grid min-h-dvh grid-cols-1 place-items-center px-4 pt-24 pb-20 sm:px-6">
       <div className="auth-folders pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true" data-paused={backgroundPaused}>
-        {backgroundFolders.map(({ x, y, size, angle, color, duration, delay }) => (
-          <Folder
+        {backgroundGlyphs.map(({ icon: GlyphIcon, x, y, size, angle, color, duration, delay }) => (
+          <GlyphIcon
             key={`${x}-${y}`}
             className="auth-folder"
             data-color={color}

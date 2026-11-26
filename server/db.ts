@@ -12,9 +12,12 @@ import {
 import type {
   BookmarkRecord,
   BookmarkType,
+  CardColor,
   CollectionRecord,
   HighlightColor,
   HighlightRecord,
+  TodoItem,
+  TodoPriority,
 } from './types.ts';
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR || './data');
@@ -26,6 +29,10 @@ export const DB_PATH = path.join(DATA_DIR, 'dropkeep.db');
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+// SQLite's built-in LOWER() only folds ASCII A-Z; register Unicode-aware ulower() so Cyrillic search & sorting work properly.
+db.function('ulower', (val: unknown) =>
+  typeof val === 'string' ? val.toLocaleLowerCase('ru-RU') : ''
+);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS collections (
@@ -95,6 +102,74 @@ if (!existingCols.has('snapshot_created_at')) {
 }
 if (!existingCols.has('ai_summary')) {
   db.exec("ALTER TABLE bookmarks ADD COLUMN ai_summary TEXT NOT NULL DEFAULT ''");
+}
+if (!existingCols.has('card_color')) {
+  db.exec("ALTER TABLE bookmarks ADD COLUMN card_color TEXT NOT NULL DEFAULT ''");
+}
+if (!existingCols.has('todo_items')) {
+  db.exec("ALTER TABLE bookmarks ADD COLUMN todo_items TEXT NOT NULL DEFAULT '[]'");
+}
+
+const VALID_CARD_COLORS: CardColor[] = [
+  '',
+  'amber',
+  'sage',
+  'sky',
+  'lavender',
+  'rose',
+  'sand',
+  'slate',
+];
+const VALID_TODO_PRIORITIES: TodoPriority[] = ['low', 'medium', 'high', 'urgent'];
+const VALID_BOOKMARK_TYPES: BookmarkType[] = [
+  'link',
+  'article',
+  'image',
+  'video',
+  'document',
+  'note',
+  'todo',
+];
+
+function sanitizeCardColor(raw: unknown): CardColor {
+  if (typeof raw === 'string' && VALID_CARD_COLORS.includes(raw as CardColor)) {
+    return raw as CardColor;
+  }
+  return '';
+}
+
+function sanitizeTodoItems(raw: unknown): TodoItem[] {
+  if (!Array.isArray(raw)) return [];
+  const result: TodoItem[] = [];
+  for (const entry of raw.slice(0, 200)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const item = entry as Record<string, unknown>;
+    const text = typeof item.text === 'string' ? item.text.trim().slice(0, 500) : '';
+    if (!text) continue;
+    const id =
+      typeof item.id === 'string' && item.id.trim().length > 0
+        ? item.id.trim().slice(0, 64)
+        : crypto.randomUUID();
+    const rawProgress = Number(item.progress);
+    const progress = Number.isFinite(rawProgress)
+      ? Math.max(0, Math.min(100, Math.round(rawProgress)))
+      : 0;
+    const priority: TodoPriority =
+      typeof item.priority === 'string' && VALID_TODO_PRIORITIES.includes(item.priority as TodoPriority)
+        ? (item.priority as TodoPriority)
+        : 'medium';
+    result.push({ id, text, progress, priority });
+  }
+  return result;
+}
+
+function parseTodoItemsJson(raw: unknown): TodoItem[] {
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  try {
+    return sanitizeTodoItems(JSON.parse(raw));
+  } catch {
+    return [];
+  }
 }
 
 export function getSetting(key: string): string | null {
@@ -420,7 +495,7 @@ function hydrateBookmarks(rows: Array<Record<string, unknown>>): BookmarkRecord[
 
   return rows.map((r) => ({
     id: String(r.id),
-    url: String(r.url),
+    url: String(r.url || ''),
     title: String(r.title),
     excerpt: String(r.excerpt || ''),
     note: String(r.note || ''),
@@ -428,6 +503,8 @@ function hydrateBookmarks(rows: Array<Record<string, unknown>>): BookmarkRecord[
     favicon: String(r.favicon || ''),
     domain: String(r.domain || ''),
     type: (r.type as BookmarkType) || 'link',
+    card_color: sanitizeCardColor(r.card_color),
+    todo_items: parseTodoItemsJson(r.todo_items),
     collection_id: r.collection_id ? String(r.collection_id) : null,
     is_favorite: Boolean(r.is_favorite),
     is_trashed: Boolean(r.is_trashed),
@@ -588,9 +665,9 @@ export function ensureCollectionPath(pathSegments: string[]): string | null {
 const SORT_MAP: Record<string, string> = {
   newest: 'b.created_at DESC',
   oldest: 'b.created_at ASC',
-  title_asc: 'b.title COLLATE NOCASE ASC',
-  title_desc: 'b.title COLLATE NOCASE DESC',
-  domain: 'b.domain COLLATE NOCASE ASC, b.created_at DESC',
+  title_asc: 'ulower(b.title) ASC',
+  title_desc: 'ulower(b.title) DESC',
+  domain: 'ulower(b.domain) ASC, b.created_at DESC',
 };
 
 function getDescendantCollectionIds(rootId: string): string[] {
@@ -646,18 +723,18 @@ export function listBookmarks(params: {
   }
 
   if (params.filterType) {
-    if (['article', 'video', 'image', 'link', 'document'].includes(params.filterType)) {
+    if (VALID_BOOKMARK_TYPES.includes(params.filterType as BookmarkType)) {
       conditions.push('b.type = ?');
       bindings.push(params.filterType);
     } else if (params.filterType === 'highlights') {
       conditions.push(
-        '(EXISTS (SELECT 1 FROM highlights h WHERE h.bookmark_id = b.id) OR LENGTH(TRIM(b.note)) > 0)'
+        "(EXISTS (SELECT 1 FROM highlights h WHERE h.bookmark_id = b.id) OR (b.type != 'note' AND LENGTH(TRIM(b.note)) > 0))"
       );
     } else if (params.filterType === 'untagged') {
       conditions.push('NOT EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id)');
     } else if (params.filterType === 'duplicates') {
       conditions.push(
-        'b.url IN (SELECT url FROM bookmarks WHERE is_trashed = 0 GROUP BY url HAVING COUNT(*) > 1)'
+        "b.url != '' AND b.url IN (SELECT url FROM bookmarks WHERE is_trashed = 0 AND url != '' GROUP BY url HAVING COUNT(*) > 1)"
       );
     } else if (params.filterType === 'offline') {
       conditions.push('b.snapshot_size > 0');
@@ -665,33 +742,38 @@ export function listBookmarks(params: {
   }
 
   if (params.tag) {
-    conditions.push('EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id AND bt.tag = ?)');
-    bindings.push(params.tag.toLowerCase());
+    conditions.push(
+      'EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id AND ulower(bt.tag) = ?)'
+    );
+    bindings.push(params.tag.toLocaleLowerCase('ru-RU'));
   }
 
-  // Raindrop-style search operators: #tag, domain:example.com, type:video, is:favorite
+  // Raindrop-style search operators: #tag, domain:example.com, type:video, type:note, type:todo, is:favorite
   if (params.search && params.search.trim()) {
     const tokens = params.search.trim().split(/\s+/);
     const freeTerms: string[] = [];
 
     for (const token of tokens) {
+      const lowerToken = token.toLocaleLowerCase('ru-RU');
       if (token.startsWith('#') && token.length > 1) {
-        conditions.push('EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id AND bt.tag = ?)');
-        bindings.push(token.slice(1).toLowerCase());
-      } else if (token.toLowerCase().startsWith('domain:') && token.length > 7) {
-        conditions.push('LOWER(b.domain) LIKE ?');
-        bindings.push(`%${token.slice(7).toLowerCase()}%`);
-      } else if (token.toLowerCase().startsWith('type:') && token.length > 5) {
-        const t = token.slice(5).toLowerCase();
-        if (['article', 'video', 'image', 'link', 'document'].includes(t)) {
+        conditions.push(
+          'EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id AND ulower(bt.tag) = ?)'
+        );
+        bindings.push(lowerToken.slice(1));
+      } else if (lowerToken.startsWith('domain:') && token.length > 7) {
+        conditions.push('ulower(b.domain) LIKE ?');
+        bindings.push(`%${lowerToken.slice(7)}%`);
+      } else if (lowerToken.startsWith('type:') && token.length > 5) {
+        const t = lowerToken.slice(5);
+        if (VALID_BOOKMARK_TYPES.includes(t as BookmarkType)) {
           conditions.push('b.type = ?');
           bindings.push(t);
         }
-      } else if (token.toLowerCase() === 'is:favorite' || token.toLowerCase() === 'is:fav') {
+      } else if (lowerToken === 'is:favorite' || lowerToken === 'is:fav') {
         conditions.push('b.is_favorite = 1');
-      } else if (token.toLowerCase() === 'is:untagged') {
+      } else if (lowerToken === 'is:untagged') {
         conditions.push('NOT EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id)');
-      } else if (token.toLowerCase() === 'is:offline' || token.toLowerCase() === 'is:pdf') {
+      } else if (lowerToken === 'is:offline' || lowerToken === 'is:pdf') {
         conditions.push('b.snapshot_size > 0');
       } else {
         freeTerms.push(token);
@@ -699,11 +781,11 @@ export function listBookmarks(params: {
     }
 
     for (const term of freeTerms) {
-      const pattern = `%${term.toLowerCase()}%`;
+      const pattern = `%${term.toLocaleLowerCase('ru-RU')}%`;
       conditions.push(
-        `(LOWER(b.title) LIKE ? OR LOWER(b.excerpt) LIKE ? OR LOWER(b.note) LIKE ? OR LOWER(b.url) LIKE ? OR LOWER(b.domain) LIKE ? OR LOWER(b.reader_content) LIKE ? OR EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id AND LOWER(bt.tag) LIKE ?) OR EXISTS (SELECT 1 FROM highlights h WHERE h.bookmark_id = b.id AND (LOWER(h.text) LIKE ? OR LOWER(h.note) LIKE ?)))`
+        `(ulower(b.title) LIKE ? OR ulower(b.excerpt) LIKE ? OR ulower(b.note) LIKE ? OR ulower(b.url) LIKE ? OR ulower(b.domain) LIKE ? OR ulower(b.reader_content) LIKE ? OR ulower(b.todo_items) LIKE ? OR EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id AND ulower(bt.tag) LIKE ?) OR EXISTS (SELECT 1 FROM highlights h WHERE h.bookmark_id = b.id AND (ulower(h.text) LIKE ? OR ulower(h.note) LIKE ?)))`
       );
-      bindings.push(pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern);
+      bindings.push(pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern);
     }
   }
 
@@ -711,7 +793,7 @@ export function listBookmarks(params: {
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const selectColumns =
     params.includeContent === false
-      ? `b.id, b.url, b.title, b.excerpt, b.note, b.cover, b.favicon, b.domain, b.type, b.collection_id, b.is_favorite, b.is_trashed, '' AS reader_content, '' AS ai_summary, b.snapshot_size, b.snapshot_created_at, b.created_at, b.updated_at`
+      ? `b.id, b.url, b.title, b.excerpt, b.note, b.cover, b.favicon, b.domain, b.type, b.card_color, b.todo_items, b.collection_id, b.is_favorite, b.is_trashed, '' AS reader_content, '' AS ai_summary, b.snapshot_size, b.snapshot_created_at, b.created_at, b.updated_at`
       : 'b.*';
 
   const rows = db
@@ -730,33 +812,52 @@ export function getBookmarkById(id: string): BookmarkRecord | null {
 }
 
 export function createBookmark(input: {
-  url: string;
+  url?: string;
   title?: string;
   excerpt?: string;
   note?: string;
   cover?: string;
   favicon?: string;
   type?: BookmarkType;
+  card_color?: CardColor;
+  todo_items?: TodoItem[];
   collection_id?: string | null;
   is_favorite?: boolean;
   reader_content?: string;
   tags?: string[];
   created_at?: string;
 }): BookmarkRecord {
-  const safeUrl = sanitizeBookmarkUrl(input.url);
-  if (!safeUrl) {
-    throw new Error('Укажите корректный URL (http:// или https://)');
+  const type: BookmarkType =
+    input.type && VALID_BOOKMARK_TYPES.includes(input.type) ? input.type : 'link';
+  const isStandalone = type === 'note' || type === 'todo';
+
+  let safeUrl = '';
+  let domain = '';
+  if (!isStandalone) {
+    const sanitized = sanitizeBookmarkUrl(input.url || '');
+    if (!sanitized) {
+      throw new Error('Укажите корректный URL (http:// или https://)');
+    }
+    safeUrl = sanitized;
+    domain = extractDomain(safeUrl);
+  } else if (input.url && input.url.trim()) {
+    const sanitized = sanitizeBookmarkUrl(input.url);
+    if (sanitized) {
+      safeUrl = sanitized;
+      domain = extractDomain(sanitized);
+    }
   }
 
   const id = crypto.randomUUID();
-  const domain = extractDomain(safeUrl);
-  const title = (input.title?.trim() || domain || safeUrl).slice(0, 240);
-  const excerpt = (input.excerpt || '').trim().slice(0, 1000);
-  const note = (input.note || '').trim().slice(0, 5000);
-  const cover = sanitizeMediaUrl(input.cover);
-  const favicon = sanitizeMediaUrl(input.favicon);
-  const validTypes: BookmarkType[] = ['link', 'article', 'image', 'video', 'document'];
-  const type: BookmarkType = input.type && validTypes.includes(input.type) ? input.type : 'link';
+  const defaultTitle =
+    type === 'note' ? 'Новая заметка' : type === 'todo' ? 'Список задач' : domain || safeUrl;
+  const title = (input.title?.trim() || defaultTitle).slice(0, 240);
+  const excerpt = (input.excerpt || '').trim().slice(0, 2000);
+  const note = (input.note || '').trim().slice(0, 20000);
+  const cover = type === 'todo' ? '' : sanitizeMediaUrl(input.cover);
+  const favicon = isStandalone ? '' : sanitizeMediaUrl(input.favicon);
+  const cardColor = sanitizeCardColor(input.card_color);
+  const todoItems = type === 'todo' ? sanitizeTodoItems(input.todo_items) : [];
   const collectionId = input.collection_id ? String(input.collection_id) : null;
   const isFavorite = input.is_favorite ? 1 : 0;
   const readerContent = (input.reader_content || '').slice(0, 15000);
@@ -775,8 +876,8 @@ export function createBookmark(input: {
   const tx = db.transaction(() => {
     db.prepare(
       `INSERT INTO bookmarks
-        (id, url, title, excerpt, note, cover, favicon, domain, type, collection_id, is_favorite, is_trashed, reader_content, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+        (id, url, title, excerpt, note, cover, favicon, domain, type, card_color, todo_items, collection_id, is_favorite, is_trashed, reader_content, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
     ).run(
       id,
       safeUrl,
@@ -787,6 +888,8 @@ export function createBookmark(input: {
       favicon,
       domain,
       type,
+      cardColor,
+      JSON.stringify(todoItems),
       collectionId,
       isFavorite,
       readerContent,
@@ -814,6 +917,8 @@ export function updateBookmark(
     cover: string;
     favicon: string;
     type: BookmarkType;
+    card_color: CardColor;
+    todo_items: TodoItem[];
     collection_id: string | null;
     is_favorite: boolean;
     is_trashed: boolean;
@@ -824,23 +929,41 @@ export function updateBookmark(
   const existing = getBookmarkById(id);
   if (!existing) return null;
 
+  const type: BookmarkType =
+    input.type !== undefined && VALID_BOOKMARK_TYPES.includes(input.type) ? input.type : existing.type;
+  const isStandalone = type === 'note' || type === 'todo';
+
   let url = existing.url;
   let domain = existing.domain;
   if (input.url !== undefined) {
-    const safeUrl = sanitizeBookmarkUrl(input.url);
-    if (!safeUrl) throw new Error('Некорректный URL');
-    url = safeUrl;
-    domain = extractDomain(safeUrl);
+    if (isStandalone && !input.url.trim()) {
+      url = '';
+      domain = '';
+    } else {
+      const safeUrl = sanitizeBookmarkUrl(input.url);
+      if (!safeUrl) throw new Error('Некорректный URL');
+      url = safeUrl;
+      domain = extractDomain(safeUrl);
+    }
   }
 
-  const title = input.title !== undefined ? (input.title.trim() || domain).slice(0, 240) : existing.title;
-  const excerpt = input.excerpt !== undefined ? input.excerpt.trim().slice(0, 1000) : existing.excerpt;
-  const note = input.note !== undefined ? input.note.trim().slice(0, 5000) : existing.note;
-  const cover = input.cover !== undefined ? sanitizeMediaUrl(input.cover) : existing.cover;
+  const fallbackTitle =
+    type === 'note' ? 'Заметка' : type === 'todo' ? 'Список задач' : domain || existing.title;
+  const title =
+    input.title !== undefined ? (input.title.trim() || fallbackTitle).slice(0, 240) : existing.title;
+  const excerpt = input.excerpt !== undefined ? input.excerpt.trim().slice(0, 2000) : existing.excerpt;
+  const note = input.note !== undefined ? input.note.trim().slice(0, 20000) : existing.note;
+  const cover =
+    type === 'todo'
+      ? ''
+      : input.cover !== undefined
+        ? sanitizeMediaUrl(input.cover)
+        : existing.cover;
   const favicon = input.favicon !== undefined ? sanitizeMediaUrl(input.favicon) : existing.favicon;
-  const validTypes: BookmarkType[] = ['link', 'article', 'image', 'video', 'document'];
-  const type: BookmarkType =
-    input.type !== undefined && validTypes.includes(input.type) ? input.type : existing.type;
+  const cardColor =
+    input.card_color !== undefined ? sanitizeCardColor(input.card_color) : existing.card_color;
+  const todoItems =
+    input.todo_items !== undefined ? sanitizeTodoItems(input.todo_items) : existing.todo_items;
   const collectionId = input.collection_id !== undefined ? input.collection_id : existing.collection_id;
   const isFavorite = input.is_favorite !== undefined ? (input.is_favorite ? 1 : 0) : existing.is_favorite ? 1 : 0;
   const isTrashed = input.is_trashed !== undefined ? (input.is_trashed ? 1 : 0) : existing.is_trashed ? 1 : 0;
@@ -852,7 +975,7 @@ export function updateBookmark(
     db.prepare(
       `UPDATE bookmarks
        SET url = ?, title = ?, excerpt = ?, note = ?, cover = ?, favicon = ?, domain = ?,
-           type = ?, collection_id = ?, is_favorite = ?, is_trashed = ?, reader_content = ?, updated_at = ?
+           type = ?, card_color = ?, todo_items = ?, collection_id = ?, is_favorite = ?, is_trashed = ?, reader_content = ?, updated_at = ?
        WHERE id = ?`
     ).run(
       url,
@@ -863,6 +986,8 @@ export function updateBookmark(
       favicon,
       domain,
       type,
+      cardColor,
+      JSON.stringify(todoItems),
       collectionId,
       isFavorite,
       isTrashed,
@@ -888,6 +1013,13 @@ export function updateBookmark(
   });
 
   tx();
+  if (
+    existing.cover &&
+    existing.cover.startsWith('/api/covers/') &&
+    cover !== existing.cover
+  ) {
+    removeCoverScreenshotByUrl(existing.cover);
+  }
   return getBookmarkById(id);
 }
 
@@ -962,6 +1094,34 @@ export function emptyTrash(): number {
     removeCoverScreenshotByUrl(row.cover);
   }
   return result.changes;
+}
+
+export function deleteAllBookmarks(options?: {
+  deleteCollections?: boolean;
+}): { removedBookmarks: number; removedCollections: number } {
+  const allRows = db
+    .prepare('SELECT id, cover FROM bookmarks')
+    .all() as Array<{ id: string; cover: string }>;
+
+  const deleteCollections = Boolean(options?.deleteCollections);
+
+  const tx = db.transaction(() => {
+    const removedBookmarks = db.prepare('DELETE FROM bookmarks').run().changes;
+    let removedCollections = 0;
+    if (deleteCollections) {
+      removedCollections = db.prepare('DELETE FROM collections').run().changes;
+    }
+    // Keep initial seed marker set so starter demo bookmarks are never re-created on restart
+    setSetting('initial_seed_v1', '1');
+    return { removedBookmarks, removedCollections };
+  });
+
+  const result = tx();
+  for (const row of allRows) {
+    removeSnapshotFile(row.id);
+    removeCoverScreenshotByUrl(row.cover);
+  }
+  return result;
 }
 
 export function bulkUpdateBookmarks(input: {
@@ -1105,6 +1265,8 @@ export function getSmartStats(): {
   images: number;
   links: number;
   documents: number;
+  notes: number;
+  todos: number;
   highlights: number;
   untagged: number;
   duplicates: number;
@@ -1133,14 +1295,16 @@ export function getSmartStats(): {
     images: q("SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND type = 'image'"),
     links: q("SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND type = 'link'"),
     documents: q("SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND type = 'document'"),
+    notes: q("SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND type = 'note'"),
+    todos: q("SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND type = 'todo'"),
     highlights: q(
-      'SELECT COUNT(*) as c FROM bookmarks b WHERE b.is_trashed = 0 AND (EXISTS (SELECT 1 FROM highlights h WHERE h.bookmark_id = b.id) OR LENGTH(TRIM(b.note)) > 0)'
+      "SELECT COUNT(*) as c FROM bookmarks b WHERE b.is_trashed = 0 AND (EXISTS (SELECT 1 FROM highlights h WHERE h.bookmark_id = b.id) OR (b.type != 'note' AND LENGTH(TRIM(b.note)) > 0))"
     ),
     untagged: q(
       'SELECT COUNT(*) as c FROM bookmarks b WHERE b.is_trashed = 0 AND NOT EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id)'
     ),
     duplicates: q(
-      'SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND url IN (SELECT url FROM bookmarks WHERE is_trashed = 0 GROUP BY url HAVING COUNT(*) > 1)'
+      "SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND url != '' AND url IN (SELECT url FROM bookmarks WHERE is_trashed = 0 AND url != '' GROUP BY url HAVING COUNT(*) > 1)"
     ),
     offline: q('SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND snapshot_size > 0'),
     dbSizeBytes,

@@ -1,5 +1,14 @@
-export type BookmarkType = 'link' | 'article' | 'image' | 'video' | 'document';
+export type BookmarkType = 'link' | 'article' | 'image' | 'video' | 'document' | 'note' | 'todo';
 export type HighlightColor = 'yellow' | 'blue' | 'pink' | 'green';
+export type CardColor = '' | 'amber' | 'sage' | 'sky' | 'lavender' | 'rose' | 'sand' | 'slate';
+export type TodoPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface TodoItem {
+  id: string;
+  text: string;
+  progress: number;
+  priority: TodoPriority;
+}
 
 export interface CollectionRecord {
   id: string;
@@ -31,6 +40,8 @@ export interface BookmarkRecord {
   favicon: string;
   domain: string;
   type: BookmarkType;
+  card_color: CardColor;
+  todo_items: TodoItem[];
   collection_id: string | null;
   is_favorite: boolean;
   is_trashed: boolean;

@@ -13,12 +13,14 @@ import {
   Image as ImageIcon,
   Inbox,
   Link2,
+  ListChecks,
   Moon,
   Pencil,
   PlayCircle,
   Plus,
   Settings,
   Star,
+  StickyNote,
   Sun,
   Tag,
   Trash2,
@@ -37,6 +39,7 @@ interface SidebarProps {
   activeFilter: SmartFilter;
   activeTag: string | null;
   darkMode: boolean;
+  darkSidebar?: boolean;
   mobileOpen: boolean;
   onCloseMobile: () => void;
   onToggleTheme: () => void;
@@ -60,6 +63,7 @@ export const Sidebar = memo(function Sidebar({
   activeFilter,
   activeTag,
   darkMode,
+  darkSidebar = false,
   mobileOpen,
   onCloseMobile,
   onToggleTheme,
@@ -155,7 +159,7 @@ export const Sidebar = memo(function Sidebar({
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, { collectionId: col.id })}
             style={{ paddingLeft: `${8 + depth * 16}px` }}
-            className={`group flex items-center gap-1.5 pr-2 py-1.5 rounded-md text-[13px] transition-colors cursor-pointer select-none ${
+            className={`dk-nav-item group flex items-center gap-1.5 pr-2 py-1.5 rounded-md text-[13px] transition-colors cursor-pointer select-none ${
               isDragTarget
                 ? 'bg-[#0B72E7]/15 ring-1 ring-[#0B72E7] text-[#0B72E7] dark:text-[#60A5FA]'
                 : isActive
@@ -242,6 +246,8 @@ export const Sidebar = memo(function Sidebar({
     count: number;
     icon: typeof BookOpen;
   }> = [
+    { key: 'note', label: 'Заметки', count: stats.notes, icon: StickyNote },
+    { key: 'todo', label: 'Списки задач', count: stats.todos, icon: ListChecks },
     { key: 'article', label: 'Статьи', count: stats.articles, icon: BookOpen },
     { key: 'video', label: 'Видео', count: stats.videos, icon: PlayCircle },
     { key: 'image', label: 'Изображения', count: stats.images, icon: ImageIcon },
@@ -254,7 +260,11 @@ export const Sidebar = memo(function Sidebar({
   ];
 
   const sidebarContent = (
-    <aside className="w-[260px] h-full flex flex-col bg-[#F6F7F9] dark:bg-[#1A1B1E] border-r border-[#E6E8EC] dark:border-[#2B2D32] select-none shrink-0">
+    <aside
+      className={`${
+        darkSidebar ? 'dark ' : ''
+      }dk-sidebar w-[260px] h-full flex flex-col bg-[#F6F7F9] dark:bg-[#1A1B1E] border-r border-[#E6E8EC] dark:border-[#2B2D32] select-none shrink-0`}
+    >
       {/* Brand + Utility Row */}
       <div className="h-[54px] px-3.5 flex items-center justify-between border-b border-[#E6E8EC]/80 dark:border-[#2B2D32] shrink-0">
         <button
@@ -311,7 +321,7 @@ export const Sidebar = memo(function Sidebar({
               onSelectScope('all');
               onCloseMobile();
             }}
-            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+            className={`dk-nav-item w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
               isSystemActive('all')
                 ? 'bg-[#E8F1FD] dark:bg-[#192B44] text-[#0B72E7] dark:text-[#58A6FF] font-medium'
                 : 'text-[#2C313A] dark:text-[#D3D7DF] hover:bg-[#EBEDF0] dark:hover:bg-[#25272C]'
@@ -331,7 +341,7 @@ export const Sidebar = memo(function Sidebar({
               onSelectScope('unsorted');
               onCloseMobile();
             }}
-            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+            className={`dk-nav-item w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
               dragOverKey === 'sys-unsorted'
                 ? 'bg-[#0B72E7]/15 ring-1 ring-[#0B72E7] text-[#0B72E7]'
                 : isSystemActive('unsorted')
@@ -353,7 +363,7 @@ export const Sidebar = memo(function Sidebar({
               onSelectScope('favorites');
               onCloseMobile();
             }}
-            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+            className={`dk-nav-item w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
               dragOverKey === 'sys-favorites'
                 ? 'bg-[#0B72E7]/15 ring-1 ring-[#0B72E7] text-[#0B72E7]'
                 : isSystemActive('favorites')
@@ -375,7 +385,7 @@ export const Sidebar = memo(function Sidebar({
               onSelectScope('trash');
               onCloseMobile();
             }}
-            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+            className={`dk-nav-item w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
               dragOverKey === 'sys-trash'
                 ? 'bg-red-500/15 ring-1 ring-red-500 text-red-600'
                 : isSystemActive('trash')
@@ -452,7 +462,7 @@ export const Sidebar = memo(function Sidebar({
                       onSelectFilter(isActive ? '' : f.key);
                       onCloseMobile();
                     }}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
+                    className={`dk-nav-item w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-colors ${
                       isActive
                         ? 'bg-[#E8F1FD] dark:bg-[#192B44] text-[#0B72E7] dark:text-[#58A6FF] font-medium'
                         : 'text-[#2C313A] dark:text-[#D3D7DF] hover:bg-[#EBEDF0] dark:hover:bg-[#25272C]'
@@ -494,7 +504,7 @@ export const Sidebar = memo(function Sidebar({
                         onSelectTag(item.tag);
                         onCloseMobile();
                       }}
-                      className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] cursor-pointer transition-colors ${
+                      className={`dk-nav-item group flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[13px] cursor-pointer transition-colors ${
                         isActive
                           ? 'bg-[#E8F1FD] dark:bg-[#192B44] text-[#0B72E7] dark:text-[#58A6FF] font-medium'
                           : 'text-[#2C313A] dark:text-[#D3D7DF] hover:bg-[#EBEDF0] dark:hover:bg-[#25272C]'

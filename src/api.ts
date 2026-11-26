@@ -7,11 +7,13 @@ import type {
   AuthStatus,
   Bookmark,
   BookmarkType,
+  CardColor,
   Collection,
   Highlight,
   HighlightColor,
   ScrapedMetadata,
   SortMode,
+  TodoItem,
   WorkspaceData,
 } from './types';
 
@@ -120,18 +122,22 @@ export const api = {
   },
   getBookmark: (id: string) => apiFetch<Bookmark>(`/api/bookmarks/${encodeURIComponent(id)}`),
   createBookmark: (payload: {
-    url: string;
+    url?: string;
     title?: string;
     excerpt?: string;
     note?: string;
     cover?: string;
     favicon?: string;
     type?: BookmarkType;
+    card_color?: CardColor;
+    todo_items?: TodoItem[];
     collection_id?: string | null;
     is_favorite?: boolean;
     reader_content?: string;
     tags?: string[];
     save_offline_pdf?: boolean;
+    auto_ai_youtube?: boolean;
+    user_edited_excerpt?: boolean;
   }) =>
     apiFetch<Bookmark>('/api/bookmarks', {
       method: 'POST',
@@ -147,6 +153,8 @@ export const api = {
       cover: string;
       favicon: string;
       type: BookmarkType;
+      card_color: CardColor;
+      todo_items: TodoItem[];
       collection_id: string | null;
       is_favorite: boolean;
       is_trashed: boolean;
@@ -226,6 +234,11 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   emptyTrash: () => apiFetch<{ removed: number }>('/api/trash/empty', { method: 'POST' }),
+  deleteAllBookmarks: (deleteCollections = false) =>
+    apiFetch<{ removedBookmarks: number; removedCollections: number }>('/api/bookmarks/delete-all', {
+      method: 'POST',
+      body: JSON.stringify({ deleteCollections }),
+    }),
 
   // Highlights
   addHighlight: (
@@ -252,11 +265,16 @@ export const api = {
       method: 'DELETE',
     }),
 
-  // Scraper
+  // Scraper & Media Uploads
   fetchMetadata: (url: string) =>
     apiFetch<ScrapedMetadata>('/api/metadata/fetch', {
       method: 'POST',
       body: JSON.stringify({ url }),
+    }),
+  uploadImage: (dataUrl: string) =>
+    apiFetch<{ url: string }>('/api/uploads/image', {
+      method: 'POST',
+      body: JSON.stringify({ dataUrl }),
     }),
 
   // AI Enrichment & Tagging

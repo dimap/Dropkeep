@@ -40,9 +40,9 @@ export function sanitizeMediaUrl(raw: string | undefined | null): string {
     return trimmed;
   }
 
-  // Allow generated lightweight cover screenshots under /api/covers/<uuid>.<ext>
+  // Allow generated cover screenshots & uploaded note images under /api/covers/<uuid>.<ext>
   if (
-    /^\/api\/covers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(webp|jpg|png)$/i.test(
+    /^\/api\/covers\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(webp|jpg|png|gif)$/i.test(
       trimmed
     )
   ) {

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Search, Sparkles, X } from 'lucide-react';
 import { api } from './api';
-import { AddBookmarkModal, type BookmarkDraft } from './components/AddBookmarkModal';
+import { AddBookmarkModal, type AddModalMode, type BookmarkDraft } from './components/AddBookmarkModal';
 import { AuthGate } from './components/AuthGate';
 import { BookmarkViews, type BulkRefreshProgress } from './components/BookmarkViews';
 import { CollectionModal } from './components/CollectionModal';
@@ -12,6 +12,7 @@ import { Sidebar } from './components/Sidebar';
 import { SORT_LABELS, TopBar } from './components/TopBar';
 import { ViewSettingsMenu } from './components/ViewSettingsMenu';
 import type {
+  AppPreferences,
   AuthStatus,
   Bookmark,
   Collection,
@@ -21,8 +22,10 @@ import type {
   SmartStats,
   SortMode,
   TagCount,
+  TodoItem,
   ViewMode,
 } from './types';
+import { loadPreferences, savePreferences } from './utils/preferences';
 
 const DEFAULT_DISPLAY_FIELDS: DisplayFields = {
   cover: true,
@@ -44,6 +47,8 @@ const EMPTY_STATS: SmartStats = {
   images: 0,
   links: 0,
   documents: 0,
+  notes: 0,
+  todos: 0,
   highlights: 0,
   untagged: 0,
   duplicates: 0,
@@ -56,6 +61,8 @@ const EMPTY_STATS: SmartStats = {
 
 const FILTER_TITLES: Record<SmartFilter, string> = {
   '': '',
+  note: 'Заметки',
+  todo: 'Списки задач',
   article: 'Статьи',
   video: 'Видео',
   image: 'Изображения',
@@ -88,16 +95,8 @@ function readBookmarkletDraftFromUrl(): BookmarkDraft | null {
 
 export default function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    try {
-      const saved = window.localStorage.getItem('dropkeep_theme');
-      if (saved === 'dark') return true;
-      if (saved === 'light') return false;
-      return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-    } catch {
-      return false;
-    }
-  });
+  const [preferences, setPreferences] = useState<AppPreferences>(() => loadPreferences());
+  const darkMode = preferences.theme === 'dark';
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
@@ -106,7 +105,7 @@ export default function App() {
     } catch {
       // ignore
     }
-    return 'grid';
+    return loadPreferences().defaultViewMode;
   });
 
   const [columnCount, setColumnCount] = useState<number>(() => {
@@ -163,6 +162,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   const [activeBookmark, setActiveBookmark] = useState<Bookmark | null>(null);
+  const [inspectorMode, setInspectorMode] = useState<'preview' | 'edit'>('edit');
   const [pdfViewerBookmark, setPdfViewerBookmark] = useState<Bookmark | null>(null);
   const [savingPdfId, setSavingPdfId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -173,6 +173,7 @@ export default function App() {
 
   // Modals
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addModalMode, setAddModalMode] = useState<AddModalMode>('single');
   const [addModalDraft, setAddModalDraft] = useState<BookmarkDraft | null>(null);
   const [pendingBookmarklet, setPendingBookmarklet] = useState<BookmarkDraft | null>(() =>
     readBookmarkletDraftFromUrl()
@@ -198,20 +199,26 @@ export default function App() {
     }, 2600);
   }, []);
 
-  // Sync dark mode class on <html>
+  // Sync theme (light / dark / dark-sidebar / sepia), largeFont, and persistence
   useEffect(() => {
     const root = document.documentElement;
-    if (darkMode) {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
+    root.classList.toggle('dark', preferences.theme === 'dark');
+    root.classList.toggle('theme-sepia', preferences.theme === 'sepia');
+    root.classList.toggle('font-large', preferences.largeFont);
+    savePreferences(preferences);
+  }, [preferences]);
+
+  const handleUpdatePreferences = useCallback((patch: Partial<AppPreferences>) => {
+    setPreferences((prev) => ({ ...prev, ...patch }));
+    if (patch.defaultViewMode) {
+      setViewMode(patch.defaultViewMode);
+      try {
+        window.localStorage.setItem('dropkeep_view', patch.defaultViewMode);
+      } catch {
+        // ignore
+      }
     }
-    try {
-      window.localStorage.setItem('dropkeep_theme', darkMode ? 'dark' : 'light');
-    } catch {
-      // ignore
-    }
-  }, [darkMode]);
+  }, []);
 
   const handleViewModeChange = (mode: ViewMode) => {
     setViewMode(mode);
@@ -284,7 +291,7 @@ export default function App() {
         tag: activeTag || undefined,
         search: effectiveSearch || undefined,
         sort: sortMode,
-        includeNested: true,
+        includeNested: preferences.includeNested,
       });
       setBookmarks(items);
       setSelectedIds([]);
@@ -296,7 +303,15 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [scope, activeCollectionId, activeFilter, activeTag, effectiveSearch, sortMode]);
+  }, [
+    scope,
+    activeCollectionId,
+    activeFilter,
+    activeTag,
+    effectiveSearch,
+    sortMode,
+    preferences.includeNested,
+  ]);
 
   const runSmartSearch = useCallback(
     async (explicitQuery?: string) => {
@@ -414,6 +429,9 @@ export default function App() {
       if (!isEditing && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         setAddModalDraft(null);
+        setAddModalMode(
+          activeFilter === 'note' ? 'note' : activeFilter === 'todo' ? 'todo' : 'single'
+        );
         setAddModalOpen(true);
       }
     };
@@ -426,6 +444,7 @@ export default function App() {
     collectionModalState.open,
     settingsModalOpen,
     activeBookmark,
+    activeFilter,
   ]);
 
   const refreshAll = useCallback(async () => {
@@ -443,28 +462,20 @@ export default function App() {
 
   const handleSelectFilter = useCallback((filter: SmartFilter) => {
     setActiveFilter(filter);
+    setActiveTag(null);
+    setScope('all');
+    setActiveCollectionId(null);
     setSmartSearchMeta(null);
     setSmartSearchError('');
-    setScope((prev) => {
-      if (prev === 'trash') {
-        setActiveCollectionId(null);
-        return 'all';
-      }
-      return prev;
-    });
   }, []);
 
   const handleSelectTag = useCallback((tag: string) => {
     setActiveTag((curr) => (curr === tag ? null : tag));
+    setActiveFilter('');
+    setScope('all');
+    setActiveCollectionId(null);
     setSmartSearchMeta(null);
     setSmartSearchError('');
-    setScope((prev) => {
-      if (prev === 'trash') {
-        setActiveCollectionId(null);
-        return 'all';
-      }
-      return prev;
-    });
   }, []);
 
   const handleToggleFavorite = useCallback(
@@ -475,6 +486,24 @@ export default function App() {
       loadWorkspace();
     },
     [loadWorkspace]
+  );
+
+  const handleUpdateTodoItems = useCallback(
+    async (bm: Bookmark, items: TodoItem[]) => {
+      const optimistic: Bookmark = { ...bm, todo_items: items };
+      setBookmarks((prev) => prev.map((item) => (item.id === bm.id ? optimistic : item)));
+      setActiveBookmark((curr) => (curr?.id === bm.id ? optimistic : curr));
+      try {
+        const updated = await api.updateBookmark(bm.id, { todo_items: items });
+        setBookmarks((prev) => prev.map((item) => (item.id === bm.id ? updated : item)));
+        setActiveBookmark((curr) => (curr?.id === bm.id ? updated : curr));
+      } catch {
+        setBookmarks((prev) => prev.map((item) => (item.id === bm.id ? bm : item)));
+        setActiveBookmark((curr) => (curr?.id === bm.id ? bm : curr));
+        showToast('Не удалось обновить статус задачи');
+      }
+    },
+    [showToast]
   );
 
   const handleSaveOfflinePdf = useCallback(
@@ -537,19 +566,24 @@ export default function App() {
 
   const handleDeletePermanent = useCallback(
     (bm: Bookmark) => {
+      const runDelete = async () => {
+        await api.deleteBookmark(bm.id, true);
+        setActiveBookmark((curr) => (curr?.id === bm.id ? null : curr));
+        showToast('Закладка удалена');
+        await refreshAll();
+      };
+      if (!preferences.confirmPermanentDelete) {
+        void runDelete();
+        return;
+      }
       setConfirmState({
         title: 'Удалить навсегда?',
         message: `Закладка «${bm.title}» и её офлайн-копия будут удалены без возможности восстановления.`,
         confirmLabel: 'Удалить',
-        onConfirm: async () => {
-          await api.deleteBookmark(bm.id, true);
-          setActiveBookmark((curr) => (curr?.id === bm.id ? null : curr));
-          showToast('Закладка удалена');
-          await refreshAll();
-        },
+        onConfirm: runDelete,
       });
     },
-    [refreshAll, showToast]
+    [preferences.confirmPermanentDelete, refreshAll, showToast]
   );
 
   const handleEmptyTrash = useCallback(() => {
@@ -605,6 +639,12 @@ export default function App() {
 
   const handleSelectBookmark = useCallback((bm: Bookmark) => {
     setActiveBookmark(bm);
+    setInspectorMode(bm.type === 'note' || bm.type === 'todo' ? 'preview' : 'edit');
+  }, []);
+
+  const handleEditBookmark = useCallback((bm: Bookmark) => {
+    setActiveBookmark(bm);
+    setInspectorMode('edit');
   }, []);
 
   const handleToggleSelectId = useCallback((id: string) => {
@@ -633,8 +673,9 @@ export default function App() {
     setPdfViewerBookmark(bm);
   }, []);
 
-  const handleOpenAddModal = useCallback(() => {
+  const handleOpenAddModal = useCallback((mode: AddModalMode = 'single') => {
     setAddModalDraft(null);
+    setAddModalMode(mode);
     setAddModalOpen(true);
   }, []);
 
@@ -643,7 +684,10 @@ export default function App() {
   }, []);
 
   const handleToggleTheme = useCallback(() => {
-    setDarkMode((v) => !v);
+    setPreferences((prev) => ({
+      ...prev,
+      theme: prev.theme === 'dark' ? 'light' : 'dark',
+    }));
   }, []);
 
   const handleOpenSettings = useCallback(() => {
@@ -684,16 +728,21 @@ export default function App() {
   ) => {
     if (!selectedIds.length) return;
     if (action === 'delete') {
+      const runBulkDelete = async () => {
+        await api.bulkBookmarks({ ids: selectedIds, action: 'delete' });
+        setSelectedIds([]);
+        showToast('Выбранные закладки удалены');
+        await refreshAll();
+      };
+      if (!preferences.confirmPermanentDelete) {
+        await runBulkDelete();
+        return;
+      }
       setConfirmState({
         title: `Удалить выбранные (${selectedIds.length})?`,
         message: 'Выбранные закладки будут удалены безвозвратно.',
         confirmLabel: 'Удалить навсегда',
-        onConfirm: async () => {
-          await api.bulkBookmarks({ ids: selectedIds, action: 'delete' });
-          setSelectedIds([]);
-          showToast('Выбранные закладки удалены');
-          await refreshAll();
-        },
+        onConfirm: runBulkDelete,
       });
       return;
     }
@@ -707,15 +756,23 @@ export default function App() {
     setSelectedIds([]);
     showToast('Изменения применены');
     refreshAll();
-  }, [selectedIds, refreshAll, showToast]);
+  }, [preferences.confirmPermanentDelete, selectedIds, refreshAll, showToast]);
 
   const handleCancelBulkRefresh = useCallback(() => {
     bulkRefreshCancelRef.current = true;
   }, []);
 
   const handleBulkRefresh = useCallback(async () => {
-    const idsToRefresh = [...selectedIds];
-    if (!idsToRefresh.length || bulkRefreshProgress) return;
+    const idsToRefresh = selectedIds.filter((id) => {
+      const bm = bookmarks.find((item) => item.id === id);
+      return bm ? Boolean(bm.url) : true;
+    });
+    if (!idsToRefresh.length || bulkRefreshProgress) {
+      if (selectedIds.length > 0 && idsToRefresh.length === 0) {
+        showToast('Для заметок и списков задач обновление превью не требуется');
+      }
+      return;
+    }
 
     bulkRefreshCancelRef.current = false;
     let cursor = 0;
@@ -777,7 +834,7 @@ export default function App() {
     } else {
       showToast('Не удалось обновить превью для выбранных закладок');
     }
-  }, [selectedIds, bulkRefreshProgress, loadWorkspace, showToast]);
+  }, [selectedIds, bookmarks, bulkRefreshProgress, loadWorkspace, showToast]);
 
   // Compute current workspace header title
   const getHeaderTitle = () => {
@@ -791,6 +848,16 @@ export default function App() {
     }
     return 'Все закладки';
   };
+
+  const sortedTags = useMemo(() => {
+    const copy = [...tags];
+    if (preferences.tagSort === 'name') {
+      copy.sort((a, b) => a.tag.localeCompare(b.tag, 'ru'));
+    } else {
+      copy.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'ru'));
+    }
+    return copy;
+  }, [tags, preferences.tagSort]);
 
   if (!authStatus) {
     return (
@@ -811,17 +878,18 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex bg-white dark:bg-[#202124] text-[#181A1F] dark:text-[#F1F3F5]">
+    <div className="dk-app-shell h-screen w-screen overflow-hidden flex bg-white dark:bg-[#202124] text-[#181A1F] dark:text-[#F1F3F5]">
       {/* Left Navigation Sidebar */}
       <Sidebar
         collections={collections}
-        tags={tags}
+        tags={sortedTags}
         stats={stats}
         scope={scope}
         activeCollectionId={activeCollectionId}
         activeFilter={activeFilter}
         activeTag={activeTag}
         darkMode={darkMode}
+        darkSidebar={preferences.theme === 'dark-sidebar'}
         mobileOpen={mobileSidebarOpen}
         onCloseMobile={handleCloseMobileSidebar}
         onToggleTheme={handleToggleTheme}
@@ -858,12 +926,12 @@ export default function App() {
           onSortModeChange={setSortMode}
           onColumnCountChange={handleColumnCountChange}
           onToggleSelectAll={handleToggleSelectAll}
-          onOpenAddModal={() => setAddModalOpen(true)}
+          onOpenAddModal={handleOpenAddModal}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
         />
 
         {/* Mobile Toolbar: Search (+ optional AI Smart Search) + Unified Raindrop View Menu + Sort */}
-        <div className="sm:hidden px-3.5 py-2 border-b border-[#E6E8EC] dark:border-[#2B2D32] space-y-2 bg-white dark:bg-[#202124] shrink-0">
+        <div className="relative z-20 sm:hidden px-3.5 py-2 border-b border-[#E6E8EC] dark:border-[#2B2D32] space-y-2 bg-white dark:bg-[#202124] shrink-0">
           <div className="relative">
             {smartSearchMode && aiConfigured ? (
               smartSearchLoading ? (
@@ -1018,6 +1086,10 @@ export default function App() {
           viewMode={viewMode}
           displayFields={displayFields}
           columnCount={columnCount}
+          fallbackCoverStyle={preferences.fallbackCoverStyle}
+          clickAction={preferences.clickAction}
+          cardButtons={preferences.cardButtons}
+          showTypeBadge={preferences.showTypeBadge}
           scope={scope}
           loading={loading || smartSearchLoading}
           activeBookmarkId={activeBookmark?.id || null}
@@ -1026,10 +1098,12 @@ export default function App() {
           refreshingIds={refreshingIds}
           bulkRefreshProgress={bulkRefreshProgress}
           onSelectBookmark={handleSelectBookmark}
+          onEditBookmark={handleEditBookmark}
           onToggleSelectId={handleToggleSelectId}
           onSelectAll={handleSelectAll}
           onClearSelection={handleClearSelection}
           onToggleFavorite={handleToggleFavorite}
+          onUpdateTodoItems={handleUpdateTodoItems}
           onOpenPdf={handleOpenPdf}
           onSaveOfflinePdf={handleSaveOfflinePdf}
           onTrashBookmark={handleTrashBookmark}
@@ -1040,7 +1114,11 @@ export default function App() {
           onBulkRefresh={handleBulkRefresh}
           onCancelBulkRefresh={handleCancelBulkRefresh}
           onClickTag={handleSelectTag}
-          onOpenAddModal={handleOpenAddModal}
+          onOpenAddModal={() =>
+            handleOpenAddModal(
+              activeFilter === 'note' ? 'note' : activeFilter === 'todo' ? 'todo' : 'single'
+            )
+          }
         />
       </main>
 
@@ -1049,15 +1127,20 @@ export default function App() {
         <InspectorPanel
           bookmark={activeBookmark}
           collections={collections}
-          allTags={tags}
+          allTags={sortedTags}
           aiConfigured={aiConfigured}
           savingPdf={savingPdfId === activeBookmark.id}
+          fallbackCoverStyle={preferences.fallbackCoverStyle}
+          mode={inspectorMode}
+          onModeChange={setInspectorMode}
           onClose={() => setActiveBookmark(null)}
           onUpdated={(updated) => {
             setActiveBookmark(updated);
             setBookmarks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
             loadWorkspace();
           }}
+          onUpdateTodoItems={handleUpdateTodoItems}
+          onClickTag={handleSelectTag}
           onOpenPdf={(bm) => setPdfViewerBookmark(bm)}
           onSaveOfflinePdf={handleSaveOfflinePdf}
           onDeleteOfflinePdf={handleDeleteOfflinePdf}
@@ -1083,6 +1166,7 @@ export default function App() {
           collections={collections}
           defaultCollectionId={scope === 'collection' ? activeCollectionId : null}
           aiConfigured={aiConfigured}
+          initialMode={addModalMode}
           initialDraft={addModalDraft}
           onClose={() => {
             setAddModalOpen(false);
@@ -1090,10 +1174,15 @@ export default function App() {
           }}
           onCreated={(created) => {
             showToast(
-              created.snapshot_size > 0
-                ? 'Закладка и PDF-снимок сохранены'
-                : 'Закладка добавлена'
+              created.type === 'note'
+                ? 'Заметка создана'
+                : created.type === 'todo'
+                  ? 'Список задач создан'
+                  : created.snapshot_size > 0
+                    ? 'Закладка и PDF-снимок сохранены'
+                    : 'Закладка добавлена'
             );
+            setInspectorMode(created.type === 'note' || created.type === 'todo' ? 'preview' : 'edit');
             setActiveBookmark(created);
             refreshAll();
           }}
@@ -1121,6 +1210,8 @@ export default function App() {
         <SettingsModal
           stats={stats}
           authStatus={authStatus}
+          preferences={preferences}
+          onUpdatePreferences={handleUpdatePreferences}
           onClose={() => setSettingsModalOpen(false)}
           onDataChanged={refreshAll}
           onAuthChanged={setAuthStatus}

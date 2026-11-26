@@ -350,24 +350,32 @@ export async function suggestBookmarkEnrichment(
 
   const collectionEntries = buildCollectionPaths(input.collections).slice(0, 80);
 
+  const isVideoTranscript =
+    input.readerContent.includes('Расшифровка видео') ||
+    input.readerContent.startsWith('YouTube видео');
+
   const pageSummaryParts: string[] = [];
   if (input.url) pageSummaryParts.push(`URL: ${input.url.slice(0, 400)}`);
   if (input.title) pageSummaryParts.push(`Title: ${input.title.slice(0, 240)}`);
   if (input.excerpt) pageSummaryParts.push(`Current description: ${input.excerpt.slice(0, 600)}`);
   if (input.readerContent) {
-    pageSummaryParts.push(`Content excerpt:\n${input.readerContent.slice(0, 3200)}`);
+    const contentLabel = isVideoTranscript ? 'Video content & transcript' : 'Content excerpt';
+    const maxLen = isVideoTranscript ? 5500 : 3200;
+    pageSummaryParts.push(`${contentLabel}:\n${input.readerContent.slice(0, maxLen)}`);
   }
 
   const jsonShapeParts: string[] = [];
   const rules: string[] = [
-    'You are an assistant for a personal bookmark manager.',
-    'Analyze the webpage content and respond ONLY with a valid JSON object (no markdown, no extra commentary).',
+    'You are an assistant for a personal bookmark, note, and to-do list manager.',
+    'Analyze the bookmark, video transcript, note, or to-do list content and respond ONLY with a valid JSON object (no markdown, no extra commentary).',
   ];
 
   if (wantExcerpt) {
-    jsonShapeParts.push('"excerpt": "1-2 concise sentences in Russian"');
+    jsonShapeParts.push('"excerpt": "1-3 concise sentences in Russian"');
     rules.push(
-      'For "excerpt": write a clear, factual summary in 1-2 short sentences in Russian (max 240 chars) explaining what this page is about. Avoid marketing fluff.'
+      isVideoTranscript
+        ? 'For "excerpt": write a clear, informative summary in 2-3 concise sentences in Russian (max 340 chars) capturing what the video actually covers and its main takeaways based on the transcript and description. Avoid generic filler like "В этом видео автор рассказывает...".'
+        : 'For "excerpt": write a clear, factual summary in 1-2 short sentences in Russian (max 240 chars) explaining what this item is about. Avoid marketing fluff.'
     );
   }
 
@@ -498,6 +506,7 @@ function shortlistBookmarksForSmartSearch(
       bm.domain,
       bm.excerpt,
       bm.note,
+      bm.todo_items.map((t) => t.text).join(' '),
       bm.tags.join(' '),
       bm.reader_content.slice(0, 1200),
       bm.highlights.map((h) => `${h.text} ${h.note}`).join(' '),
@@ -634,19 +643,22 @@ export async function summarizeBookmarkWithAi(input: {
     );
   }
   if (input.readerContent) {
-    parts.push(`Article text:\n${input.readerContent.slice(0, 7500)}`);
+    const isVideo =
+      input.readerContent.includes('Расшифровка видео') ||
+      input.readerContent.startsWith('YouTube видео');
+    parts.push(`${isVideo ? 'Video content & transcript' : 'Article text'}:\n${input.readerContent.slice(0, 7500)}`);
   }
 
   const systemPrompt = [
-    'You are an expert reading assistant for a personal bookmark manager.',
-    'Create a concise, factual TL;DR summary in Russian based strictly on the provided webpage content.',
+    'You are an expert reading and video-analysis assistant for a personal bookmark manager.',
+    'Create a concise, factual TL;DR summary in Russian based strictly on the provided webpage or video transcript content.',
     'Respond ONLY with a valid JSON object (no markdown fences, no commentary):',
     '{"tldr": "1-2 коротких предложения с главной сутью материала", "bullets": ["Ключевой тезис 1", "Ключевой тезис 2", "Ключевой тезис 3"]}',
     'Rules:',
     '- Language: Russian.',
     '- "tldr": 1-2 clear sentences summarizing the main takeaway (max 340 chars).',
     '- "bullets": 3 to 5 concise, concrete key points (each max 200 chars, no leading dashes or bullets).',
-    '- Avoid filler phrases like "В этой статье рассказывается о...". Get straight to the facts.',
+    '- Avoid filler phrases like "В этой статье рассказывается о..." or "В этом видео автор рассказывает...". Get straight to the facts.',
   ].join('\n');
 
   const { content, model } = await callOpenAiCompatibleChat(
@@ -705,4 +717,68 @@ export async function summarizeBookmarkWithAi(input: {
   }
 
   return { tldr, bullets, model };
+}
+
+export async function summarizeYouTubeExcerptWithAi(input: {
+  url: string;
+  title: string;
+  excerpt: string;
+  readerContent: string;
+}): Promise<{ excerpt: string; model: string }> {
+  const parts: string[] = [];
+  if (input.title) parts.push(`Video title: ${input.title.slice(0, 240)}`);
+  if (input.url) parts.push(`URL: ${input.url.slice(0, 400)}`);
+  if (input.excerpt && !input.readerContent.includes(input.excerpt.slice(0, 80))) {
+    parts.push(`Short description: ${input.excerpt.slice(0, 500)}`);
+  }
+  if (input.readerContent) {
+    parts.push(`Video metadata & transcript:\n${input.readerContent.slice(0, 7500)}`);
+  }
+
+  const systemPrompt = [
+    'You are an assistant for a personal bookmark manager.',
+    'Based on the YouTube video transcript and metadata, write a crisp, factual summary in Russian for the bookmark description field.',
+    'Respond ONLY with a valid JSON object (no markdown fences, no commentary):',
+    '{"excerpt": "2-3 ёмких предложения на русском о сути ролика"}',
+    'Rules:',
+    '- Language: Russian (even if the video is in English or another language).',
+    '- Length: 2-3 concise sentences, max 380 characters.',
+    '- Focus on concrete topics, solutions, arguments, or takeaways actually covered in the video.',
+    '- Avoid generic filler like "В этом видео автор рассказывает..." or "Ролик посвящён...". Start directly with the substance.',
+  ].join('\n');
+
+  const { content, model } = await callOpenAiCompatibleChat(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: parts.join('\n\n') },
+    ],
+    260,
+    22_000
+  );
+
+  const parsed = parseJsonObjectLoose(content);
+  let rawExcerpt = '';
+  if (parsed && typeof parsed.excerpt === 'string') {
+    rawExcerpt = parsed.excerpt;
+  } else if (parsed && typeof parsed.summary === 'string') {
+    rawExcerpt = parsed.summary;
+  } else {
+    rawExcerpt = content
+      .replace(/^```(?:json|text)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+  }
+
+  const cleaned = rawExcerpt
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^["'«]+|["'»]+$/g, '')
+    .trim()
+    .slice(0, 440);
+
+  if (cleaned.length < 10) {
+    throw new Error('ИИ не смог сформировать описание ролика');
+  }
+
+  return { excerpt: cleaned, model };
 }

@@ -12,7 +12,7 @@ services:
       # Optional: enable full visual webpage PDF capture (HTML/CSS/JS/images)
       # by launching with: GOTENBERG_URL=http://gotenberg:3000 docker compose --profile full-pdf up -d
       - GOTENBERG_URL=${GOTENBERG_URL:-}
-      # Optional: custom OpenAI-compatible AI model for automatic bookmark tagging
+      # Optional: custom OpenAI-compatible AI model (tagging, smart search, TL;DR, YouTube summaries)
       # (OpenAI, OpenRouter, DeepSeek, Ollama, vLLM, LM Studio, etc.)
       - AI_API_URL=${AI_API_URL:-}
       - AI_API_KEY=${AI_API_KEY:-}

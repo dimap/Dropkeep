@@ -26,6 +26,7 @@ import {
   Layers,
   Lightbulb,
   Link2,
+  ListChecks,
   Lock,
   MapPin,
   Music,
@@ -38,6 +39,7 @@ import {
   ShoppingBag,
   Sparkles,
   Star,
+  StickyNote,
   Terminal,
   Type,
   Utensils,
@@ -175,6 +177,10 @@ export function getBookmarkTypeMeta(type: BookmarkType): {
       return { label: 'Изображение', icon: ImageIcon };
     case 'document':
       return { label: 'Документ', icon: FileText };
+    case 'note':
+      return { label: 'Заметка', icon: StickyNote };
+    case 'todo':
+      return { label: 'Задачи', icon: ListChecks };
     default:
       return { label: 'Ссылка', icon: Link2 };
   }

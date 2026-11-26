@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import { assertSafeFetchUrl, extractDomain, sanitizeMediaUrl } from './security.ts';
 import type { ArticleBlock, BookmarkType, ScrapedArticle, ScrapedMetadata } from './types.ts';
+import { isYouTubeUrl, scrapeYouTubeArticleForPdf, scrapeYouTubeMetadata } from './youtube.ts';
 
 const MAX_BYTES = 1_500_000; // 1.5 MB limit
 const MAX_REDIRECTS = 3;
@@ -144,6 +145,14 @@ function extractBlocksFromHtml($: cheerio.CheerioAPI): ArticleBlock[] {
 
 export async function scrapeUrlMetadata(rawUrl: string): Promise<ScrapedMetadata> {
   const safeUrl = await assertSafeFetchUrl(rawUrl);
+
+  if (isYouTubeUrl(safeUrl.toString())) {
+    const ytMeta = await scrapeYouTubeMetadata(safeUrl.toString());
+    if (ytMeta) {
+      return ytMeta;
+    }
+  }
+
   const domain = extractDomain(safeUrl.toString());
 
   const fallback: ScrapedMetadata = {
@@ -256,6 +265,10 @@ export async function scrapeUrlMetadata(rawUrl: string): Promise<ScrapedMetadata
  */
 export async function scrapeArticleForPdf(rawUrl: string): Promise<ScrapedArticle | null> {
   try {
+    if (isYouTubeUrl(rawUrl)) {
+      const ytArticle = await scrapeYouTubeArticleForPdf(rawUrl);
+      if (ytArticle) return ytArticle;
+    }
     const { response } = await safeFetchWithRedirects(rawUrl);
     if (!response.ok) return null;
     const contentType = (response.headers.get('content-type') || '').toLowerCase();

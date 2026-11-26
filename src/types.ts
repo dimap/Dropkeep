@@ -1,5 +1,15 @@
-export type BookmarkType = 'link' | 'article' | 'image' | 'video' | 'document';
+export type BookmarkType = 'link' | 'article' | 'image' | 'video' | 'document' | 'note' | 'todo';
 export type HighlightColor = 'yellow' | 'blue' | 'pink' | 'green';
+export type CardColor = '' | 'amber' | 'sage' | 'sky' | 'lavender' | 'rose' | 'sand' | 'slate';
+export type TodoPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface TodoItem {
+  id: string;
+  text: string;
+  progress: number;
+  priority: TodoPriority;
+}
+
 export type ViewMode = 'list' | 'grid' | 'headlines' | 'masonry';
 export type SortMode = 'newest' | 'oldest' | 'title_asc' | 'title_desc' | 'domain';
 
@@ -13,9 +23,30 @@ export interface DisplayFields {
   info: boolean;
 }
 
+export type AppTheme = 'light' | 'dark' | 'dark-sidebar' | 'sepia';
+export type FallbackCoverStyle = 'minimal' | 'soft-tint' | 'monochrome' | 'paper' | 'dots';
+export type BookmarkClickAction = 'new_tab' | 'same_tab' | 'inspector';
+export type TagSortMode = 'name' | 'count';
+export type CardButtonId = 'edit' | 'open' | 'copy' | 'pdf' | 'favorite' | 'trash';
+
+export interface AppPreferences {
+  theme: AppTheme;
+  fallbackCoverStyle: FallbackCoverStyle;
+  largeFont: boolean;
+  defaultViewMode: ViewMode;
+  clickAction: BookmarkClickAction;
+  cardButtons: CardButtonId[];
+  showTypeBadge: boolean;
+  tagSort: TagSortMode;
+  includeNested: boolean;
+  confirmPermanentDelete: boolean;
+}
+
 export type NavScope = 'all' | 'unsorted' | 'favorites' | 'trash' | 'collection';
 export type SmartFilter =
   | ''
+  | 'note'
+  | 'todo'
   | 'article'
   | 'video'
   | 'image'
@@ -56,6 +87,8 @@ export interface Bookmark {
   favicon: string;
   domain: string;
   type: BookmarkType;
+  card_color: CardColor;
+  todo_items: TodoItem[];
   collection_id: string | null;
   is_favorite: boolean;
   is_trashed: boolean;
@@ -79,6 +112,8 @@ export interface SmartStats {
   unsorted: number;
   favorites: number;
   trash: number;
+  notes: number;
+  todos: number;
   articles: number;
   videos: number;
   images: number;

@@ -11,14 +11,16 @@ if (!fs.existsSync(COVERS_DIR)) {
 }
 
 const MAX_SCREENSHOT_BYTES = 1_200_000; // 1.2 MB hard cap for lightweight cover thumbnails
+const MAX_UPLOAD_IMAGE_BYTES = 5_000_000; // 5 MB hard cap for user-uploaded note images
 const UUID_COVER_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(webp|jpg|png)$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(webp|jpg|png|gif)$/i;
+const DATA_URL_IMAGE_RE = /^data:image\/(png|jpe?g|webp|gif);base64,([A-Za-z0-9+/=\s]+)$/i;
 
 export function isBrowserConfigured(): boolean {
   return Boolean(process.env.GOTENBERG_URL && process.env.GOTENBERG_URL.trim().length > 0);
 }
 
-function detectImageExtension(buf: Buffer): 'webp' | 'jpg' | 'png' | null {
+function detectImageExtension(buf: Buffer): 'webp' | 'jpg' | 'png' | 'gif' | null {
   if (buf.byteLength < 12) return null;
   // WebP: RIFF....WEBP
   if (
@@ -35,7 +37,55 @@ function detectImageExtension(buf: Buffer): 'webp' | 'jpg' | 'png' | null {
   if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
     return 'png';
   }
+  // GIF: GIF87a / GIF89a
+  const gifSig = buf.subarray(0, 6).toString('ascii');
+  if (gifSig === 'GIF87a' || gifSig === 'GIF89a') {
+    return 'gif';
+  }
   return null;
+}
+
+/**
+ * Validates and saves a user-uploaded image (PNG/JPEG/WebP/GIF, up to 5 MB)
+ * into the confined COVERS_DIR with a random UUID filename.
+ */
+export function saveUploadedCoverImage(dataUrl: string): string {
+  if (typeof dataUrl !== 'string') {
+    throw new Error('Некорректный формат изображения');
+  }
+  const trimmed = dataUrl.trim();
+  const match = DATA_URL_IMAGE_RE.exec(trimmed);
+  if (!match) {
+    throw new Error('Поддерживаются только изображения PNG, JPEG, WebP или GIF');
+  }
+
+  const base64Payload = match[2].replace(/\s+/g, '');
+  // Quick pre-decode size guard (~6.8 MB base64 for 5 MB binary)
+  if (base64Payload.length === 0 || base64Payload.length > 7_000_000) {
+    throw new Error('Размер изображения превышает допустимый лимит (5 МБ)');
+  }
+
+  const buffer = Buffer.from(base64Payload, 'base64');
+  if (buffer.byteLength === 0 || buffer.byteLength > MAX_UPLOAD_IMAGE_BYTES) {
+    throw new Error('Размер изображения превышает допустимый лимит (5 МБ)');
+  }
+
+  const ext = detectImageExtension(buffer);
+  if (!ext) {
+    throw new Error('Файл не является корректным изображением PNG, JPEG, WebP или GIF');
+  }
+
+  const filename = `${crypto.randomUUID()}.${ext}`;
+  const targetPath = path.resolve(COVERS_DIR, filename);
+  if (!targetPath.startsWith(COVERS_DIR + path.sep)) {
+    throw new Error('Недопустимый путь сохранения файла');
+  }
+
+  const tempPath = `${targetPath}.tmp`;
+  fs.writeFileSync(tempPath, buffer);
+  fs.renameSync(tempPath, targetPath);
+
+  return `/api/covers/${filename}`;
 }
 
 /**
@@ -108,7 +158,9 @@ export function getCoverScreenshotPath(
     ? 'image/webp'
     : lower.endsWith('.png')
       ? 'image/png'
-      : 'image/jpeg';
+      : lower.endsWith('.gif')
+        ? 'image/gif'
+        : 'image/jpeg';
 
   return { filePath: candidate, contentType };
 }

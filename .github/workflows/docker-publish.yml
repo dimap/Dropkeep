@@ -48,7 +48,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' }}
           labels: |
             org.opencontainers.image.title=Dropkeep
-            org.opencontainers.image.description=Self-hosted visual bookmark manager with nested collections, offline PDF snapshots, and optional AI enrichment
+            org.opencontainers.image.description=Self-hosted visual bookmark, notes, and to-do manager with nested collections, offline PDF snapshots, and optional AI enrichment (including YouTube summaries)
 
       - name: Build and push multi-arch Docker image
         uses: docker/build-push-action@v6

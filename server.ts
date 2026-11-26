@@ -9,6 +9,7 @@ import {
   suggestBookmarkEnrichment,
   suggestTagsWithAi,
   summarizeBookmarkWithAi,
+  summarizeYouTubeExcerptWithAi,
   testAiConnection,
 } from './server/ai.ts';
 import {
@@ -33,6 +34,7 @@ import {
   clearBookmarkSnapshot,
   createBookmark,
   createCollection,
+  deleteAllBookmarks,
   deleteBookmarkPermanent,
   deleteCollection,
   deleteHighlight,
@@ -57,18 +59,20 @@ import {
   parseNetscapeHtml,
 } from './server/importExport.ts';
 import { scrapeUrlMetadata } from './server/scraper.ts';
+import { isYouTubeUrl, scrapeYouTubeMetadata } from './server/youtube.ts';
 import {
   captureCoverScreenshot,
   getCoverScreenshotPath,
   isBrowserConfigured,
   removeCoverScreenshotByUrl,
+  saveUploadedCoverImage,
 } from './server/screenshot.ts';
 import {
   generateBookmarkPdfSnapshot,
   getSnapshotFilePath,
   removeSnapshotFile,
 } from './server/snapshot.ts';
-import type { BookmarkType, HighlightColor } from './server/types.ts';
+import type { BookmarkType, CardColor, HighlightColor, TodoItem } from './server/types.ts';
 
 dotenv.config();
 
@@ -138,7 +142,7 @@ async function startServer(): Promise<void> {
   // Protect all remaining /api/* routes when password protection is enabled
   app.use('/api', requireAuthMiddleware);
 
-  // --- Lightweight Local Cover Screenshots (authenticated, UUID filenames, path-confined) ---
+  // --- Lightweight Local Cover Screenshots & Uploaded Note Images (authenticated, UUID filenames, path-confined) ---
   app.get('/api/covers/:filename', (req, res) => {
     const resolved = getCoverScreenshotPath(req.params.filename);
     if (!resolved) {
@@ -149,6 +153,18 @@ async function startServer(): Promise<void> {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, max-age=604800, immutable');
     fs.createReadStream(resolved.filePath).pipe(res);
+  });
+
+  app.post('/api/uploads/image', (req, res) => {
+    try {
+      const dataUrl = typeof req.body?.dataUrl === 'string' ? req.body.dataUrl : '';
+      const url = saveUploadedCoverImage(dataUrl);
+      res.status(201).json({ url });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Не удалось загрузить изображение',
+      });
+    }
   });
 
   app.post('/api/auth/logout', (req, res) => {
@@ -270,20 +286,77 @@ async function startServer(): Promise<void> {
   app.post('/api/bookmarks', async (req, res) => {
     try {
       let created = createBookmark({
-        url: String(req.body?.url || ''),
+        url: typeof req.body?.url === 'string' ? req.body.url : '',
         title: typeof req.body?.title === 'string' ? req.body.title : undefined,
         excerpt: typeof req.body?.excerpt === 'string' ? req.body.excerpt : undefined,
         note: typeof req.body?.note === 'string' ? req.body.note : undefined,
         cover: typeof req.body?.cover === 'string' ? req.body.cover : undefined,
         favicon: typeof req.body?.favicon === 'string' ? req.body.favicon : undefined,
         type: req.body?.type as BookmarkType | undefined,
+        card_color: typeof req.body?.card_color === 'string' ? (req.body.card_color as never) : undefined,
+        todo_items: Array.isArray(req.body?.todo_items) ? req.body.todo_items : undefined,
         collection_id: req.body?.collection_id ?? null,
         is_favorite: Boolean(req.body?.is_favorite),
         reader_content: typeof req.body?.reader_content === 'string' ? req.body.reader_content : undefined,
         tags: Array.isArray(req.body?.tags) ? req.body.tags.map(String) : [],
       });
 
-      if (req.body?.save_offline_pdf) {
+      const shouldAutoAiYoutube =
+        req.body?.auto_ai_youtube !== false &&
+        req.body?.user_edited_excerpt !== true &&
+        Boolean(created.url) &&
+        isYouTubeUrl(created.url) &&
+        getAiStatus().configured;
+
+      if (shouldAutoAiYoutube) {
+        try {
+          let nextTitle = created.title;
+          let nextCover = created.cover;
+          let nextFavicon = created.favicon;
+          let nextReader = created.reader_content;
+          let nextExcerpt = created.excerpt;
+
+          if (
+            nextReader.trim().length < 250 ||
+            !nextReader.includes('Расшифровка видео')
+          ) {
+            const ytMeta = await scrapeYouTubeMetadata(created.url);
+            if (ytMeta) {
+              if (!nextTitle || nextTitle === created.domain || nextTitle === created.url) {
+                nextTitle = ytMeta.title;
+              }
+              if (!nextCover) nextCover = ytMeta.cover;
+              if (!nextFavicon) nextFavicon = ytMeta.favicon;
+              if (ytMeta.reader_content.trim().length > nextReader.trim().length) {
+                nextReader = ytMeta.reader_content;
+              }
+              if (!nextExcerpt) nextExcerpt = ytMeta.excerpt;
+            }
+          }
+
+          if (nextReader.trim().length >= 40 || nextTitle.trim() || nextExcerpt.trim()) {
+            const aiRes = await summarizeYouTubeExcerptWithAi({
+              url: created.url,
+              title: nextTitle,
+              excerpt: nextExcerpt,
+              readerContent: nextReader,
+            });
+            const updated = updateBookmark(created.id, {
+              title: nextTitle,
+              excerpt: aiRes.excerpt,
+              cover: nextCover,
+              favicon: nextFavicon,
+              type: 'video',
+              reader_content: nextReader,
+            });
+            if (updated) created = updated;
+          }
+        } catch {
+          // Never fail bookmark creation if YouTube transcript or AI summary fails
+        }
+      }
+
+      if (req.body?.save_offline_pdf && created.url) {
         try {
           const snap = await generateBookmarkPdfSnapshot(created);
           const withSnap = updateBookmarkSnapshot(created.id, snap);
@@ -309,6 +382,8 @@ async function startServer(): Promise<void> {
         cover: req.body?.cover,
         favicon: req.body?.favicon,
         type: req.body?.type,
+        card_color: req.body?.card_color,
+        todo_items: Array.isArray(req.body?.todo_items) ? req.body.todo_items : undefined,
         collection_id: req.body?.collection_id,
         is_favorite: req.body?.is_favorite,
         is_trashed: req.body?.is_trashed,
@@ -329,6 +404,10 @@ async function startServer(): Promise<void> {
     const existing = getBookmarkById(req.params.id);
     if (!existing) {
       res.status(404).json({ error: 'Закладка не найдена' });
+      return;
+    }
+    if (!existing.url) {
+      res.status(400).json({ error: 'Для локальных заметок и списков задач обновление по URL недоступно' });
       return;
     }
     try {
@@ -368,6 +447,10 @@ async function startServer(): Promise<void> {
     const existing = getBookmarkById(req.params.id);
     if (!existing) {
       res.status(404).json({ error: 'Закладка не найдена' });
+      return;
+    }
+    if (!existing.url) {
+      res.status(400).json({ error: 'PDF-снимок доступен только для веб-закладок' });
       return;
     }
     try {
@@ -458,6 +541,12 @@ async function startServer(): Promise<void> {
   app.post('/api/trash/empty', (_req, res) => {
     const removed = emptyTrash();
     res.json({ removed });
+  });
+
+  app.post('/api/bookmarks/delete-all', (req, res) => {
+    const deleteCollections = Boolean(req.body?.deleteCollections);
+    const result = deleteAllBookmarks({ deleteCollections });
+    res.json(result);
   });
 
   // --- Highlights ---
@@ -561,7 +650,11 @@ async function startServer(): Promise<void> {
 
     try {
       let metadata = null;
-      if (rawUrl && (!title || !readerContent)) {
+      const needsYoutubeTranscript =
+        rawUrl &&
+        isYouTubeUrl(rawUrl) &&
+        (!readerContent || !readerContent.includes('Расшифровка видео'));
+      if (rawUrl && (!title || !readerContent || needsYoutubeTranscript)) {
         try {
           metadata = await scrapeUrlMetadata(rawUrl);
           if (!metadata.cover && isBrowserConfigured()) {
@@ -570,7 +663,9 @@ async function startServer(): Promise<void> {
           }
           if (!title) title = metadata.title;
           if (!excerpt) excerpt = metadata.excerpt;
-          if (!readerContent) readerContent = metadata.reader_content;
+          if (!readerContent || metadata.reader_content.length > readerContent.length) {
+            readerContent = metadata.reader_content;
+          }
         } catch {
           // Proceed with available fields if target blocks scraping
         }
@@ -768,12 +863,14 @@ async function startServer(): Promise<void> {
         const parsed = JSON.parse(content) as {
           collections?: Array<{ title: string }>;
           bookmarks?: Array<{
-            url: string;
+            url?: string;
             title?: string;
             excerpt?: string;
             note?: string;
             cover?: string;
             type?: BookmarkType;
+            card_color?: CardColor;
+            todo_items?: TodoItem[];
             tags?: string[];
             folder?: string;
             created_at?: string;
@@ -781,19 +878,22 @@ async function startServer(): Promise<void> {
         };
         const items = Array.isArray(parsed) ? parsed : parsed.bookmarks || [];
         for (const item of items) {
-          if (!item?.url) continue;
+          const isLocal = item?.type === 'note' || item?.type === 'todo';
+          if (!isLocal && !item?.url) continue;
           const folderPath = typeof item.folder === 'string' && item.folder.trim()
             ? item.folder.split('/').map((s: string) => s.trim()).filter(Boolean)
             : [];
           const colId = folderPath.length ? ensureCollectionPath(folderPath) : null;
           try {
             createBookmark({
-              url: item.url,
+              url: item.url || '',
               title: item.title,
               excerpt: item.excerpt,
               note: item.note,
               cover: item.cover,
               type: item.type,
+              card_color: item.card_color,
+              todo_items: Array.isArray(item.todo_items) ? item.todo_items : undefined,
               collection_id: colId,
               tags: Array.isArray(item.tags) ? item.tags.map(String) : [],
               created_at: item.created_at,

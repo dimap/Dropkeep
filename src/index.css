@@ -39,3 +39,54 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(120, 128, 140, 0.45);
 }
+
+/* Warm Sepia Reading Theme */
+html.theme-sepia {
+  color-scheme: light;
+}
+
+html.theme-sepia body,
+html.theme-sepia .dk-app-shell {
+  background-color: #FAF5E8 !important;
+  color: #2E271E !important;
+}
+
+html.theme-sepia .dk-sidebar {
+  background-color: #F2E9D5 !important;
+  border-color: #E3D6BC !important;
+}
+
+html.theme-sepia header,
+html.theme-sepia .dk-surface {
+  background-color: #FAF5E8 !important;
+  border-color: #E5DAC4 !important;
+}
+
+html.theme-sepia article.dk-card:not([data-card-color="true"]) {
+  background-color: #FFFDF7 !important;
+  border-color: #E5DAC4 !important;
+}
+
+html.theme-sepia article.dk-card:not([data-card-color="true"]):hover {
+  border-color: #D2C2A3 !important;
+}
+
+/* Large Font Preference */
+html.font-large .dk-card-title {
+  font-size: 16px !important;
+  line-height: 1.38 !important;
+}
+
+html.font-large .dk-card-excerpt {
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+html.font-large .dk-card-meta {
+  font-size: 13px !important;
+}
+
+html.font-large .dk-nav-item {
+  font-size: 14.5px !important;
+}
+

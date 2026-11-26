@@ -9,13 +9,17 @@ import {
   FileCheck2,
   FileDown,
   FileText,
+  Folder,
   Highlighter,
+  ListChecks,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
   Sparkles,
   Star,
+  StickyNote,
   Trash2,
   X,
 } from 'lucide-react';
@@ -24,12 +28,23 @@ import type {
   AiSummaryData,
   Bookmark,
   BookmarkType,
+  CardColor,
   Collection,
+  FallbackCoverStyle,
   HighlightColor,
   TagCount,
+  TodoItem,
 } from '../types';
 import { formatBytes, formatShortDate, isSafeExternalHref } from '../utils/icons';
+import {
+  formatTodoItemsForAi,
+  getCardColorOption,
+  getTodoSummary,
+  TODO_PRIORITY_META,
+} from '../utils/notes';
 import { BookmarkCover } from './BookmarkCover';
+import { NoteImagePicker } from './NoteImagePicker';
+import { CardColorPicker, TodoItemsEditor } from './TodoItemsEditor';
 
 interface InspectorPanelProps {
   bookmark: Bookmark;
@@ -37,8 +52,13 @@ interface InspectorPanelProps {
   allTags: TagCount[];
   aiConfigured: boolean;
   savingPdf: boolean;
+  fallbackCoverStyle?: FallbackCoverStyle;
+  mode?: 'preview' | 'edit';
+  onModeChange?: (mode: 'preview' | 'edit') => void;
   onClose: () => void;
   onUpdated: (bookmark: Bookmark) => void;
+  onUpdateTodoItems?: (bookmark: Bookmark, items: TodoItem[]) => void;
+  onClickTag?: (tag: string) => void;
   onOpenPdf: (bookmark: Bookmark) => void;
   onSaveOfflinePdf: (bookmark: Bookmark) => Promise<void>;
   onDeleteOfflinePdf: (bookmark: Bookmark) => Promise<void>;
@@ -95,8 +115,13 @@ export function InspectorPanel({
   allTags,
   aiConfigured,
   savingPdf,
+  fallbackCoverStyle = 'minimal',
+  mode = 'edit',
+  onModeChange,
   onClose,
   onUpdated,
+  onUpdateTodoItems,
+  onClickTag,
   onOpenPdf,
   onSaveOfflinePdf,
   onDeleteOfflinePdf,
@@ -111,11 +136,30 @@ export function InspectorPanel({
   const [url, setUrl] = useState(bookmark.url);
   const [cover, setCover] = useState(bookmark.cover);
   const [type, setType] = useState<BookmarkType>(bookmark.type);
+  const [cardColor, setCardColor] = useState<CardColor>(bookmark.card_color || '');
+  const [todoItems, setTodoItems] = useState<TodoItem[]>(bookmark.todo_items || []);
   const [collectionId, setCollectionId] = useState<string>(bookmark.collection_id || '');
   const [tags, setTags] = useState<string[]>(bookmark.tags);
   const [tagInput, setTagInput] = useState('');
   const [readerContent, setReaderContent] = useState(bookmark.reader_content);
   const [aiSummaryRaw, setAiSummaryRaw] = useState(bookmark.ai_summary);
+
+  const isNote = type === 'note';
+  const isTodo = type === 'todo';
+  const isLocalItem = isNote || isTodo;
+  const isPreviewMode = isLocalItem && mode === 'preview';
+  const previewColorOpt = getCardColorOption(bookmark.card_color);
+  const previewCollectionTitle = useMemo(
+    () =>
+      bookmark.collection_id
+        ? collections.find((c) => c.id === bookmark.collection_id)?.title || null
+        : null,
+    [bookmark.collection_id, collections]
+  );
+  const previewTodoSummary = useMemo(
+    () => (isTodo ? getTodoSummary(bookmark.todo_items || []) : null),
+    [isTodo, bookmark.todo_items]
+  );
 
   const [saving, setSaving] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState(false);
@@ -142,10 +186,15 @@ export function InspectorPanel({
     setUrl(bookmark.url);
     setCover(bookmark.cover);
     setType(bookmark.type);
+    setCardColor(bookmark.card_color || '');
+    setTodoItems(bookmark.todo_items || []);
     setCollectionId(bookmark.collection_id || '');
     setTags(bookmark.tags);
     setReaderContent(bookmark.reader_content);
     setAiSummaryRaw(bookmark.ai_summary);
+    if (bookmark.type === 'note' || bookmark.type === 'todo') {
+      setTab('edit');
+    }
     setTagInput('');
     setError('');
     setAiNote('');
@@ -154,8 +203,21 @@ export function InspectorPanel({
     setSavedFeedback(false);
   }, [bookmark]);
 
+  // Close preview popup on Escape key
+  useEffect(() => {
+    if (!isPreviewMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isPreviewMode, onClose]);
+
   // Hydrate full reader_content & ai_summary lazily so list API stays tiny & instant
   useEffect(() => {
+    if (bookmark.type === 'note' || bookmark.type === 'todo') return;
     let cancelled = false;
     api
       .getBookmark(bookmark.id)
@@ -170,7 +232,7 @@ export function InspectorPanel({
     return () => {
       cancelled = true;
     };
-  }, [bookmark.id]);
+  }, [bookmark.id, bookmark.type]);
 
   const addTagValue = (raw: string) => {
     const clean = raw.trim().toLowerCase().replace(/^#/, '');
@@ -188,9 +250,11 @@ export function InspectorPanel({
         title,
         excerpt,
         note,
-        url,
-        cover,
+        url: isLocalItem ? '' : url,
+        cover: isTodo ? '' : cover,
         type,
+        card_color: isLocalItem ? cardColor : '',
+        todo_items: isTodo ? todoItems.filter((item) => item.text.trim().length > 0) : [],
         collection_id: collectionId || null,
         tags,
       });
@@ -204,7 +268,24 @@ export function InspectorPanel({
     }
   };
 
+  const handleTogglePreviewTodo = (itemId: string) => {
+    if (!isTodo || bookmark.is_trashed) return;
+    const current = bookmark.todo_items || [];
+    const next = current.map((item) =>
+      item.id === itemId ? { ...item, progress: item.progress >= 100 ? 0 : 100 } : item
+    );
+    if (onUpdateTodoItems) {
+      onUpdateTodoItems(bookmark, next);
+    } else {
+      api
+        .updateBookmark(bookmark.id, { todo_items: next })
+        .then(onUpdated)
+        .catch(() => {});
+    }
+  };
+
   const handleRefreshMetadata = async () => {
+    if (isLocalItem) return;
     setRefreshing(true);
     setError('');
     try {
@@ -222,21 +303,25 @@ export function InspectorPanel({
     setError('');
     setAiNote('');
 
-    const fields =
-      modeType === 'all'
-        ? { tags: true, collection: true, excerpt: true }
-        : {
-            tags: modeType === 'tags',
-            collection: modeType === 'collection',
-            excerpt: modeType === 'excerpt',
-          };
+    const wantExcerpt = !isNote && (modeType === 'all' || modeType === 'excerpt');
+    const fields = {
+      tags: modeType === 'all' || modeType === 'tags',
+      collection: modeType === 'all' || modeType === 'collection',
+      excerpt: wantExcerpt,
+    };
+
+    const aiReaderContent = isNote
+      ? note
+      : isTodo
+        ? formatTodoItemsForAi(todoItems)
+        : readerContent;
 
     try {
       const res = await api.suggestBookmark({
-        url,
+        url: isLocalItem ? '' : url,
         title,
-        excerpt,
-        reader_content: readerContent,
+        excerpt: isNote ? '' : excerpt,
+        reader_content: aiReaderContent,
         fields,
       });
 
@@ -380,40 +465,314 @@ export function InspectorPanel({
     .filter((t) => !tags.includes(t) && (!tagInput.trim() || t.includes(tagInput.trim().toLowerCase())))
     .slice(0, 6);
 
+  if (isPreviewMode) {
+    const popupSurfaceClass = bookmark.card_color
+      ? previewColorOpt.cardClass
+      : 'bg-white dark:bg-[#1E1F23] border-[#E6E8EC] dark:border-[#34373E]';
+
+    return (
+      <div
+        onClick={onClose}
+        className="fixed inset-0 z-40 flex justify-end sm:items-center sm:justify-center sm:bg-black/45 sm:backdrop-blur-[2px] sm:p-6"
+      >
+        <aside
+          data-card-color={bookmark.card_color ? 'true' : undefined}
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-label={bookmark.title}
+          className={`w-full max-w-[400px] h-full sm:max-w-[640px] sm:h-auto sm:max-h-[86vh] flex flex-col border-l sm:border sm:rounded-2xl shadow-xl sm:shadow-2xl overflow-hidden ${popupSurfaceClass}`}
+        >
+          {/* Top Header: Title + Favorite + Close */}
+          <div className="px-5 py-3.5 flex items-start justify-between gap-3 border-b border-black/8 dark:border-white/10 shrink-0">
+            <h2 className="text-[17px] sm:text-[18px] font-semibold leading-snug text-[#181A1F] dark:text-[#F1F3F5] break-words min-w-0 flex-1 pt-0.5">
+              {bookmark.title}
+            </h2>
+
+            <div className="flex items-center gap-1 shrink-0 -mr-1">
+              {!bookmark.is_trashed && (
+                <button
+                  type="button"
+                  onClick={handleToggleFavorite}
+                  title={bookmark.is_favorite ? 'Убрать из избранного' : 'В избранное'}
+                  aria-label={bookmark.is_favorite ? 'Убрать из избранного' : 'В избранное'}
+                  className={`w-8 h-8 rounded-md flex items-center justify-center hover:bg-black/6 dark:hover:bg-white/10 transition-colors cursor-pointer ${
+                    bookmark.is_favorite ? 'text-[#D97706]' : 'text-[#5F6672] dark:text-[#A1A7B3]'
+                  }`}
+                >
+                  <Star className="w-4 h-4" fill={bookmark.is_favorite ? 'currentColor' : 'none'} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Закрыть"
+                className="w-8 h-8 rounded-md flex items-center justify-center text-[#5F6672] dark:text-[#A1A7B3] hover:bg-black/6 dark:hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Note / To-Do Body */}
+          <div className="flex-1 overflow-y-auto">
+            {isNote && bookmark.cover && (
+              <div className="w-full border-b border-black/8 dark:border-white/10 bg-black/4 dark:bg-black/20 overflow-hidden flex items-center justify-center">
+                <img
+                  src={bookmark.cover}
+                  alt={bookmark.title}
+                  referrerPolicy="no-referrer"
+                  className="w-full max-h-[300px] sm:max-h-[420px] object-contain block"
+                />
+              </div>
+            )}
+
+            <div className="px-5 py-4 space-y-4">
+              {isNote && (
+                bookmark.note ? (
+                  <div className="text-[14px] leading-[1.7] text-[#1F242D] dark:text-[#E5E7EB] whitespace-pre-wrap break-words">
+                    {bookmark.note}
+                  </div>
+                ) : (
+                  <p className="text-[13.5px] italic text-[#7A828F] dark:text-[#8E96A4]">
+                    Текст заметки не заполнен
+                  </p>
+                )
+              )}
+
+              {isTodo && (
+                <div className="space-y-4">
+                  {bookmark.excerpt && (
+                    <p className="text-[13.5px] leading-relaxed text-[#4B5563] dark:text-[#C4C9D4] whitespace-pre-wrap break-words">
+                      {bookmark.excerpt}
+                    </p>
+                  )}
+
+                  {previewTodoSummary && previewTodoSummary.total > 0 ? (
+                    <>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3]">
+                          <span className="tabular-nums">
+                            Выполнено {previewTodoSummary.completed} из {previewTodoSummary.total}
+                          </span>
+                          <span className="tabular-nums font-semibold text-[#181A1F] dark:text-[#F1F3F5]">
+                            {previewTodoSummary.avgProgress}%
+                          </span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-black/8 dark:bg-white/10 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-200 ${
+                              previewTodoSummary.avgProgress >= 100
+                                ? 'bg-[#16A34A]'
+                                : 'bg-[#0B72E7] dark:bg-[#58A6FF]'
+                            }`}
+                            style={{ width: `${previewTodoSummary.avgProgress}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <ul className="space-y-2.5 pt-0.5">
+                        {(bookmark.todo_items || []).map((item) => {
+                          const done = item.progress >= 100;
+                          const partial = item.progress > 0 && item.progress < 100;
+                          const prio =
+                            TODO_PRIORITY_META[item.priority] || TODO_PRIORITY_META.medium;
+                          return (
+                            <li key={item.id} className="space-y-1">
+                              <div className="flex items-start gap-2.5 text-[14px] leading-snug">
+                                <button
+                                  type="button"
+                                  disabled={bookmark.is_trashed}
+                                  onClick={() => handleTogglePreviewTodo(item.id)}
+                                  title={
+                                    done
+                                      ? 'Снять отметку выполнения'
+                                      : 'Отметить выполненной (100%)'
+                                  }
+                                  aria-label={`Переключить задачу: ${item.text}`}
+                                  className={`mt-0.5 w-[18px] h-[18px] rounded-[4px] border flex items-center justify-center shrink-0 transition-colors cursor-pointer disabled:opacity-50 ${
+                                    done
+                                      ? 'bg-[#16A34A] border-[#16A34A] text-white'
+                                      : partial
+                                        ? 'bg-white/90 dark:bg-[#1E2024]/90 border-[#0B72E7] text-[#0B72E7] dark:text-[#58A6FF]'
+                                        : 'bg-white/85 dark:bg-[#1E2024]/85 border-black/20 dark:border-white/25 hover:border-[#0B72E7]'
+                                  }`}
+                                >
+                                  {done ? (
+                                    <Check className="w-3 h-3 stroke-[2.8]" />
+                                  ) : partial ? (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                  ) : null}
+                                </button>
+
+                                <div className="flex-1 min-w-0 space-y-1">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span
+                                      className={`break-words ${
+                                        done
+                                          ? 'line-through text-[#7A828F] dark:text-[#8E96A4]'
+                                          : 'text-[#181A1F] dark:text-[#F1F3F5]'
+                                      }`}
+                                    >
+                                      {item.text}
+                                    </span>
+                                    <span
+                                      className={`shrink-0 inline-flex items-center px-1.5 py-[1px] rounded text-[10.5px] font-medium border ${prio.badgeClass}`}
+                                    >
+                                      {prio.label}
+                                    </span>
+                                  </div>
+
+                                  {partial && (
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex-1 h-1.5 rounded-full bg-black/8 dark:bg-white/10 overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full ${prio.barClass}`}
+                                          style={{ width: `${item.progress}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-[11px] font-semibold tabular-nums text-[#0B72E7] dark:text-[#60A5FA] shrink-0">
+                                        {item.progress}%
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="text-[13.5px] italic text-[#7A828F] dark:text-[#8E96A4]">
+                      В этом списке пока нет задач — нажмите «Редактировать», чтобы добавить их.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Footer: Folder, Tags, Dates + Single Edit button */}
+          <div className="px-5 py-3.5 border-t border-black/8 dark:border-white/10 flex flex-wrap items-end justify-between gap-3 shrink-0">
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-[#5F6672] dark:text-[#A1A7B3]">
+                <span className="inline-flex items-center gap-1.5 font-medium text-[#374151] dark:text-[#D1D5DB]">
+                  <Folder className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                  <span className="truncate max-w-[200px]">
+                    {previewCollectionTitle || 'Несортированные'}
+                  </span>
+                </span>
+
+                {bookmark.tags.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {bookmark.tags.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => {
+                          onClickTag?.(t);
+                          onClose();
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-black/6 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15 text-[11.5px] text-[#374151] dark:text-[#D8DCE4] hover:text-[#0B72E7] dark:hover:text-[#58A6FF] transition-colors cursor-pointer"
+                      >
+                        #{t}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="text-[11.5px] text-[#6B7280] dark:text-[#9CA3AF] tabular-nums">
+                Добавлено {formatShortDate(bookmark.created_at)} · Обновлено{' '}
+                {formatShortDate(bookmark.updated_at)}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {bookmark.is_trashed && (
+                <button
+                  type="button"
+                  onClick={() => onRestore(bookmark)}
+                  className="h-9 px-3.5 rounded-lg bg-[#16A34A] hover:bg-[#15803D] text-white text-[13px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Восстановить</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onModeChange?.('edit')}
+                className="h-9 px-4 rounded-lg bg-[#0B72E7] hover:bg-[#0960C5] text-white text-[13px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Редактировать</span>
+              </button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    );
+  }
+
   return (
     <aside className="fixed inset-y-0 right-0 z-30 w-full max-w-[400px] xl:static xl:w-[390px] xl:shrink-0 h-full flex flex-col bg-white dark:bg-[#1E1F23] border-l border-[#E6E8EC] dark:border-[#2B2D32] shadow-xl xl:shadow-none">
       {/* Header */}
       <div className="h-[54px] px-4 flex items-center justify-between gap-2 border-b border-[#E6E8EC] dark:border-[#2B2D32] shrink-0">
-        <div className="flex items-center p-0.5 rounded-lg bg-[#F4F5F7] dark:bg-[#2A2C31]">
-          <button
-            type="button"
-            onClick={() => setTab('edit')}
-            className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors whitespace-nowrap ${
-              tab === 'edit'
-                ? 'bg-white dark:bg-[#3A3D45] text-[#181A1F] dark:text-white shadow-xs'
-                : 'text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#181A1F] dark:hover:text-white'
-            }`}
-          >
-            Свойства
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('reader')}
-            className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-              tab === 'reader'
-                ? 'bg-white dark:bg-[#3A3D45] text-[#181A1F] dark:text-white shadow-xs'
-                : 'text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#181A1F] dark:hover:text-white'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>Копия и цитаты</span>
-            {bookmark.highlights.length > 0 && (
-              <span className="tabular-nums text-[11px] opacity-75">({bookmark.highlights.length})</span>
+        {isLocalItem ? (
+          <div className="flex items-center gap-2 min-w-0">
+            {isNote ? (
+              <StickyNote className="w-4 h-4 text-[#D97706] dark:text-[#FBBF24] shrink-0" />
+            ) : (
+              <ListChecks className="w-4 h-4 text-[#16A34A] dark:text-[#4ADE80] shrink-0" />
             )}
-          </button>
-        </div>
+            <span className="text-[13.5px] font-semibold text-[#181A1F] dark:text-[#F1F3F5] truncate">
+              {isNote ? 'Заметка' : 'Список задач'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center p-0.5 rounded-lg bg-[#F4F5F7] dark:bg-[#2A2C31]">
+            <button
+              type="button"
+              onClick={() => setTab('edit')}
+              className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors whitespace-nowrap ${
+                tab === 'edit'
+                  ? 'bg-white dark:bg-[#3A3D45] text-[#181A1F] dark:text-white shadow-xs'
+                  : 'text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#181A1F] dark:hover:text-white'
+              }`}
+            >
+              Свойства
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('reader')}
+              className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+                tab === 'reader'
+                  ? 'bg-white dark:bg-[#3A3D45] text-[#181A1F] dark:text-white shadow-xs'
+                  : 'text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#181A1F] dark:hover:text-white'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Копия и цитаты</span>
+              {bookmark.highlights.length > 0 && (
+                <span className="tabular-nums text-[11px] opacity-75">({bookmark.highlights.length})</span>
+              )}
+            </button>
+          </div>
+        )}
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
+          {isLocalItem && onModeChange && (
+            <button
+              type="button"
+              onClick={() => onModeChange('preview')}
+              title="Предпросмотр"
+              className="h-8 px-2.5 rounded-md text-[12px] font-medium inline-flex items-center gap-1.5 text-[#5F6672] dark:text-[#C4C9D4] hover:bg-[#F3F4F6] dark:hover:bg-[#2B2D32] hover:text-[#0B72E7] dark:hover:text-[#58A6FF] transition-colors whitespace-nowrap cursor-pointer"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Просмотр</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={handleToggleFavorite}
@@ -443,130 +802,164 @@ export function InspectorPanel({
           </div>
         )}
 
-        {tab === 'edit' ? (
+        {tab === 'edit' || isLocalItem ? (
           <>
-            {/* Cover Preview */}
-            <div className="space-y-2">
-              <div className="relative aspect-[16/9] rounded-lg overflow-hidden border border-[#E6E8EC] dark:border-[#32353B]">
-                <BookmarkCover
-                  cover={cover}
-                  title={title}
-                  domain={bookmark.domain}
-                  type={type}
-                  className="w-full h-full"
-                />
-                <button
-                  type="button"
-                  onClick={handleRefreshMetadata}
-                  disabled={refreshing}
-                  title="Обновить обложку (или сделать скриншот через браузер), описание и копию текста со страницы"
-                  className="absolute bottom-2 right-2 h-7 px-2.5 rounded-md bg-white/95 dark:bg-[#202124]/95 border border-[#D4DCE6] dark:border-[#383B42] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] flex items-center gap-1.5 hover:border-[#0B72E7] transition-colors disabled:opacity-60"
-                >
-                  <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
-                  <span>{refreshing ? 'Обновление...' : 'Обновить метаданные'}</span>
-                </button>
-              </div>
-
-              {/* On-demand AI enrichment action bar (hidden when AI is not configured) */}
-              {aiConfigured && (
-                <>
-                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B]">
-                    <div className="min-w-0">
-                      <div className="text-[12px] font-medium text-[#181A1F] dark:text-[#F1F3F5] flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-[#0B72E7] dark:text-[#58A6FF] shrink-0" />
-                        <span className="truncate">ИИ по запросу</span>
-                      </div>
-                      <div className="text-[11px] text-[#7A828F] truncate">
-                        Поля или краткая выжимка
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        disabled={Boolean(aiBusy)}
-                        onClick={() => handleGenerateSummary(true)}
-                        title="Создать краткую выжимку (TL;DR) по содержимому страницы"
-                        className="h-7 px-2 rounded-md border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[11.5px] font-medium text-[#5F6672] dark:text-[#C4C9D4] hover:text-[#181A1F] dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
-                      >
-                        {aiBusy === 'summary' && <Loader2 className="w-3 h-3 animate-spin" />}
-                        <span>Выжимка</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={Boolean(aiBusy)}
-                        onClick={() => runAiSuggest('all')}
-                        title="Заполнить описание, коллекцию и 2–3 тега"
-                        className="h-7 px-2.5 rounded-md border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] inline-flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
-                      >
-                        {aiBusy === 'all' && <Loader2 className="w-3 h-3 animate-spin" />}
-                        <span>{aiBusy === 'all' ? 'Анализ...' : 'Заполнить'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {aiNote && (
-                    <div className="text-[11.5px] text-[#0B72E7] dark:text-[#58A6FF] px-1 leading-snug">
-                      {aiNote}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Compact 1-click Offline PDF status bar */}
-              <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B]">
-                <div className="flex items-center gap-2 min-w-0">
-                  {bookmark.snapshot_size > 0 ? (
-                    <FileCheck2 className="w-4 h-4 text-[#0B72E7] dark:text-[#58A6FF] shrink-0" />
-                  ) : (
-                    <FileDown className="w-4 h-4 text-[#7A828F] shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="text-[12px] font-medium text-[#181A1F] dark:text-[#F1F3F5] truncate">
-                      {bookmark.snapshot_size > 0 ? 'Офлайн PDF сохранён' : 'Офлайн-снимок PDF'}
-                    </div>
-                    {bookmark.snapshot_size > 0 && (
-                      <div className="text-[11px] text-[#7A828F] tabular-nums">
-                        {formatBytes(bookmark.snapshot_size)}
-                        {bookmark.snapshot_created_at
-                          ? ` · ${formatShortDate(bookmark.snapshot_created_at)}`
-                          : ''}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {bookmark.snapshot_size > 0 ? (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => onOpenPdf(bookmark)}
-                      className="h-7 px-2.5 rounded-md bg-[#0B72E7] hover:bg-[#0960C5] text-white text-[11.5px] font-medium whitespace-nowrap"
-                    >
-                      Читать PDF
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => api.downloadPdfSnapshot(bookmark.id, bookmark.title).catch(() => {})}
-                      title="Скачать PDF"
-                      aria-label="Скачать PDF"
-                      className="w-7 h-7 rounded-md border border-[#E2E5EB] dark:border-[#383B42] flex items-center justify-center text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#181A1F] dark:hover:text-white"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
+            {/* Cover Preview & Offline PDF (web bookmarks only) */}
+            {!isLocalItem && (
+              <div className="space-y-2">
+                <div className="relative aspect-[16/9] rounded-lg overflow-hidden border border-[#E6E8EC] dark:border-[#32353B]">
+                  <BookmarkCover
+                    cover={cover}
+                    title={title}
+                    domain={bookmark.domain}
+                    type={type}
+                    fallbackStyle={fallbackCoverStyle}
+                    className="w-full h-full"
+                  />
                   <button
                     type="button"
-                    disabled={savingPdf}
-                    onClick={() => onSaveOfflinePdf(bookmark)}
+                    onClick={handleRefreshMetadata}
+                    disabled={refreshing}
+                    title="Обновить обложку (или сделать скриншот через браузер), описание и копию текста со страницы"
+                    className="absolute bottom-2 right-2 h-7 px-2.5 rounded-md bg-white/95 dark:bg-[#202124]/95 border border-[#D4DCE6] dark:border-[#383B42] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] flex items-center gap-1.5 hover:border-[#0B72E7] transition-colors disabled:opacity-60"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
+                    <span>{refreshing ? 'Обновление...' : 'Обновить метаданные'}</span>
+                  </button>
+                </div>
+
+                {/* On-demand AI enrichment action bar (hidden when AI is not configured) */}
+                {aiConfigured && (
+                  <>
+                    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B]">
+                      <div className="min-w-0">
+                        <div className="text-[12px] font-medium text-[#181A1F] dark:text-[#F1F3F5] flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-[#0B72E7] dark:text-[#58A6FF] shrink-0" />
+                          <span className="truncate">ИИ по запросу</span>
+                        </div>
+                        <div className="text-[11px] text-[#7A828F] truncate">
+                          Поля или краткая выжимка
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          disabled={Boolean(aiBusy)}
+                          onClick={() => handleGenerateSummary(true)}
+                          title="Создать краткую выжимку (TL;DR) по содержимому страницы"
+                          className="h-7 px-2 rounded-md border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[11.5px] font-medium text-[#5F6672] dark:text-[#C4C9D4] hover:text-[#181A1F] dark:hover:text-white inline-flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {aiBusy === 'summary' && <Loader2 className="w-3 h-3 animate-spin" />}
+                          <span>Выжимка</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(aiBusy)}
+                          onClick={() => runAiSuggest('all')}
+                          title="Заполнить описание, коллекцию и 2–3 тега"
+                          className="h-7 px-2.5 rounded-md border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] inline-flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {aiBusy === 'all' && <Loader2 className="w-3 h-3 animate-spin" />}
+                          <span>{aiBusy === 'all' ? 'Анализ...' : 'Заполнить'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {aiNote && (
+                      <div className="text-[11.5px] text-[#0B72E7] dark:text-[#58A6FF] px-1 leading-snug">
+                        {aiNote}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Compact 1-click Offline PDF status bar */}
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {bookmark.snapshot_size > 0 ? (
+                      <FileCheck2 className="w-4 h-4 text-[#0B72E7] dark:text-[#58A6FF] shrink-0" />
+                    ) : (
+                      <FileDown className="w-4 h-4 text-[#7A828F] shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-[12px] font-medium text-[#181A1F] dark:text-[#F1F3F5] truncate">
+                        {bookmark.snapshot_size > 0 ? 'Офлайн PDF сохранён' : 'Офлайн-снимок PDF'}
+                      </div>
+                      {bookmark.snapshot_size > 0 && (
+                        <div className="text-[11px] text-[#7A828F] tabular-nums">
+                          {formatBytes(bookmark.snapshot_size)}
+                          {bookmark.snapshot_created_at
+                            ? ` · ${formatShortDate(bookmark.snapshot_created_at)}`
+                            : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {bookmark.snapshot_size > 0 ? (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onOpenPdf(bookmark)}
+                        className="h-7 px-2.5 rounded-md bg-[#0B72E7] hover:bg-[#0960C5] text-white text-[11.5px] font-medium whitespace-nowrap"
+                      >
+                        Читать PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => api.downloadPdfSnapshot(bookmark.id, bookmark.title).catch(() => {})}
+                        title="Скачать PDF"
+                        aria-label="Скачать PDF"
+                        className="w-7 h-7 rounded-md border border-[#E2E5EB] dark:border-[#383B42] flex items-center justify-center text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#181A1F] dark:hover:text-white"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={savingPdf}
+                      onClick={() => onSaveOfflinePdf(bookmark)}
+                      className="h-7 px-2.5 rounded-md border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] inline-flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap shrink-0"
+                    >
+                      {savingPdf && <Loader2 className="w-3 h-3 animate-spin" />}
+                      <span>{savingPdf ? 'Сохранение...' : 'Сохранить PDF'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Compact AI bar for Notes & To-Do lists */}
+            {isLocalItem && aiConfigured && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B]">
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-medium text-[#181A1F] dark:text-[#F1F3F5] flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#0B72E7] dark:text-[#58A6FF] shrink-0" />
+                      <span className="truncate">Подбор ИИ</span>
+                    </div>
+                    <div className="text-[11px] text-[#7A828F] truncate">
+                      {isTodo ? 'Описание, коллекция и теги' : 'Коллекция и теги по тексту'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={Boolean(aiBusy)}
+                    onClick={() => runAiSuggest('all')}
                     className="h-7 px-2.5 rounded-md border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] inline-flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap shrink-0"
                   >
-                    {savingPdf && <Loader2 className="w-3 h-3 animate-spin" />}
-                    <span>{savingPdf ? 'Сохранение...' : 'Сохранить PDF'}</span>
+                    {aiBusy === 'all' && <Loader2 className="w-3 h-3 animate-spin" />}
+                    <span>{aiBusy === 'all' ? 'Анализ...' : 'Заполнить'}</span>
                   </button>
+                </div>
+                {aiNote && (
+                  <div className="text-[11.5px] text-[#0B72E7] dark:text-[#58A6FF] px-1 leading-snug">
+                    {aiNote}
+                  </div>
                 )}
               </div>
-            </div>
+            )}
 
             {/* Title */}
             <div>
@@ -581,53 +974,81 @@ export function InspectorPanel({
               />
             </div>
 
-            {/* Excerpt */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3]">
-                  Описание
-                </label>
-                {aiConfigured && (
-                  <button
-                    type="button"
-                    onClick={() => runAiSuggest('excerpt')}
-                    disabled={Boolean(aiBusy)}
-                    className="text-[11.5px] text-[#0B72E7] dark:text-[#58A6FF] hover:underline inline-flex items-center gap-1 disabled:opacity-50"
-                  >
-                    {aiBusy === 'excerpt' ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3 h-3" />
-                    )}
-                    <span>Составить</span>
-                  </button>
-                )}
+            {/* Optional Preview Image for Notes */}
+            {isNote && (
+              <NoteImagePicker value={cover} onChange={setCover} compact />
+            )}
+
+            {/* Background Color Picker for Notes & To-Do Lists */}
+            {isLocalItem && (
+              <CardColorPicker value={cardColor} onChange={setCardColor} />
+            )}
+
+            {/* Description (Web bookmarks & To-Do lists) */}
+            {!isNote && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3]">
+                    Описание
+                  </label>
+                  {aiConfigured && (
+                    <button
+                      type="button"
+                      onClick={() => runAiSuggest('excerpt')}
+                      disabled={Boolean(aiBusy)}
+                      className="text-[11.5px] text-[#0B72E7] dark:text-[#58A6FF] hover:underline inline-flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {aiBusy === 'excerpt' ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
+                      <span>Составить</span>
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  rows={isTodo ? 2 : 3}
+                  value={excerpt}
+                  onChange={(e) => setExcerpt(e.target.value)}
+                  placeholder={isTodo ? 'Краткое описание списка задач...' : 'Краткое описание страницы...'}
+                  className="w-full px-3 py-2 rounded-lg text-[13px] bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:bg-white dark:focus:bg-[#202124] focus:outline-none resize-none leading-relaxed"
+                />
               </div>
-              <textarea
-                rows={3}
-                value={excerpt}
-                onChange={(e) => setExcerpt(e.target.value)}
-                placeholder="Краткое описание страницы..."
-                className="w-full px-3 py-2 rounded-lg text-[13px] bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:bg-white dark:focus:bg-[#202124] focus:outline-none resize-none leading-relaxed"
-              />
-            </div>
+            )}
 
-            {/* Personal Note */}
-            <div>
-              <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1">
-                Личная заметка
-              </label>
-              <textarea
-                rows={3}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Ваши комментарии, команды или выводы..."
-                className="w-full px-3 py-2 rounded-lg text-[13px] bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:bg-white dark:focus:bg-[#202124] focus:outline-none resize-none leading-relaxed"
-              />
-            </div>
+            {/* To-Do Items Editor (To-Do Lists only) */}
+            {isTodo && (
+              <div>
+                <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1.5">
+                  Задачи (прогресс % и приоритет)
+                </label>
+                <TodoItemsEditor items={todoItems} onChange={setTodoItems} compact />
+              </div>
+            )}
 
-            {/* Collection & Type */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Note Body (full note for Notes, personal commentary for Bookmarks) */}
+            {!isTodo && (
+              <div>
+                <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1">
+                  {isNote ? 'Текст заметки' : 'Личная заметка'}
+                </label>
+                <textarea
+                  rows={isNote ? 9 : 3}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder={
+                    isNote
+                      ? 'Запишите мысли, команды, фрагменты или план...'
+                      : 'Ваши комментарии, команды или выводы...'
+                  }
+                  className="w-full px-3 py-2 rounded-lg text-[13px] bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:bg-white dark:focus:bg-[#202124] focus:outline-none resize-y leading-relaxed"
+                />
+              </div>
+            )}
+
+            {/* Collection (& Type for web bookmarks) */}
+            <div className={isLocalItem ? '' : 'grid grid-cols-2 gap-3'}>
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3]">
@@ -665,22 +1086,24 @@ export function InspectorPanel({
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1">
-                  Тип
-                </label>
-                <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value as BookmarkType)}
-                  className="w-full h-9 px-2.5 rounded-lg text-[13px] bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:outline-none"
-                >
-                  <option value="link">Ссылка</option>
-                  <option value="article">Статья</option>
-                  <option value="video">Видео</option>
-                  <option value="image">Изображение</option>
-                  <option value="document">Документ</option>
-                </select>
-              </div>
+              {!isLocalItem && (
+                <div>
+                  <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1">
+                    Тип
+                  </label>
+                  <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value as BookmarkType)}
+                    className="w-full h-9 px-2.5 rounded-lg text-[13px] bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:outline-none"
+                  >
+                    <option value="link">Ссылка</option>
+                    <option value="article">Статья</option>
+                    <option value="video">Видео</option>
+                    <option value="image">Изображение</option>
+                    <option value="document">Документ</option>
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Tags Editor */}
@@ -757,57 +1180,60 @@ export function InspectorPanel({
               )}
             </div>
 
-            {/* URL */}
-            <div>
-              <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1">
-                Адрес URL
-              </label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  className="flex-1 min-w-0 h-9 px-3 rounded-lg text-[12.5px] font-mono bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(url).catch(() => {});
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1400);
-                  }}
-                  title="Копировать URL"
-                  className="w-9 h-9 rounded-lg border border-[#E6E8EC] dark:border-[#32353B] flex items-center justify-center text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#181A1F] dark:hover:text-white shrink-0"
-                >
-                  {copied ? <Check className="w-4 h-4 text-[#16A34A]" /> : <Copy className="w-4 h-4" />}
-                </button>
-                {isSafeExternalHref(url) && (
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Открыть в новой вкладке"
-                    className="w-9 h-9 rounded-lg border border-[#E6E8EC] dark:border-[#32353B] flex items-center justify-center text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#0B72E7] shrink-0"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                )}
-              </div>
-            </div>
+            {/* URL & Cover URL (web bookmarks only) */}
+            {!isLocalItem && (
+              <>
+                <div>
+                  <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1">
+                    Адрес URL
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="url"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      className="flex-1 min-w-0 h-9 px-3 rounded-lg text-[12.5px] font-mono bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(url).catch(() => {});
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 1400);
+                      }}
+                      title="Копировать URL"
+                      className="w-9 h-9 rounded-lg border border-[#E6E8EC] dark:border-[#32353B] flex items-center justify-center text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#181A1F] dark:hover:text-white shrink-0"
+                    >
+                      {copied ? <Check className="w-4 h-4 text-[#16A34A]" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                    {isSafeExternalHref(url) && (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Открыть в новой вкладке"
+                        className="w-9 h-9 rounded-lg border border-[#E6E8EC] dark:border-[#32353B] flex items-center justify-center text-[#5F6672] dark:text-[#A1A7B3] hover:text-[#0B72E7] shrink-0"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
+                  </div>
+                </div>
 
-            {/* Cover URL */}
-            <div>
-              <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1">
-                URL обложки
-              </label>
-              <input
-                type="text"
-                value={cover}
-                onChange={(e) => setCover(e.target.value)}
-                placeholder="https://... или /covers/..."
-                className="w-full h-9 px-3 rounded-lg text-[12.5px] font-mono bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:outline-none"
-              />
-            </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-[#5F6672] dark:text-[#A1A7B3] mb-1">
+                    URL обложки
+                  </label>
+                  <input
+                    type="text"
+                    value={cover}
+                    onChange={(e) => setCover(e.target.value)}
+                    placeholder="https://... или /covers/..."
+                    className="w-full h-9 px-3 rounded-lg text-[12.5px] font-mono bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] focus:border-[#0B72E7] focus:outline-none"
+                  />
+                </div>
+              </>
+            )}
 
             <div className="text-[11.5px] text-[#8B929E] tabular-nums pt-1">
               Добавлено {formatShortDate(bookmark.created_at)} · Обновлено {formatShortDate(bookmark.updated_at)}
@@ -1145,7 +1571,7 @@ export function InspectorPanel({
               <span>В корзину</span>
             </button>
 
-            {tab === 'edit' && (
+            {(tab === 'edit' || isLocalItem) && (
               <button
                 type="button"
                 onClick={handleSave}

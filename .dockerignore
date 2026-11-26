@@ -13,3 +13,6 @@ AppData
 *.log
 .DS_Store
 public/assets/aistudio
+.aistudio
+docs
+bun.lock

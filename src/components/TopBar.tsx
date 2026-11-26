@@ -2,15 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUpDown,
   CheckSquare,
+  ChevronDown,
+  Layers,
+  Link2,
+  ListChecks,
   Loader2,
   Menu,
   Plus,
   Search,
   Sparkles,
   Square,
+  StickyNote,
   X,
 } from 'lucide-react';
 import type { DisplayFields, SortMode, ViewMode } from '../types';
+import type { AddModalMode } from './AddBookmarkModal';
 import { ViewSettingsMenu } from './ViewSettingsMenu';
 
 interface TopBarProps {
@@ -33,7 +39,7 @@ interface TopBarProps {
   onSortModeChange: (sort: SortMode) => void;
   onColumnCountChange: (cols: number) => void;
   onToggleSelectAll: () => void;
-  onOpenAddModal: () => void;
+  onOpenAddModal: (mode?: AddModalMode) => void;
   onOpenMobileSidebar: () => void;
 }
 
@@ -47,9 +53,11 @@ export const SORT_LABELS: Record<SortMode, string> = {
 
 const SEARCH_HINTS = [
   { token: 'is:favorite', desc: 'Только избранное' },
-  { token: 'is:offline', desc: 'Сохранённые в PDF оффлайн' },
+  { token: 'type:note', desc: 'Только заметки' },
+  { token: 'type:todo', desc: 'Только списки задач' },
   { token: 'type:article', desc: 'Только статьи' },
   { token: 'type:video', desc: 'Только видео' },
+  { token: 'is:offline', desc: 'Сохранённые в PDF оффлайн' },
   { token: 'is:untagged', desc: 'Без тегов' },
   { token: 'domain:github.com', desc: 'Поиск по сайту' },
 ];
@@ -78,8 +86,10 @@ export function TopBar({
   onOpenMobileSidebar,
 }: TopBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   // Cmd/Ctrl + K shortcut to focus search
   useEffect(() => {
@@ -88,10 +98,24 @@ export function TopBar({
         e.preventDefault();
         inputRef.current?.focus();
       }
+      if (e.key === 'Escape') {
+        setAddMenuOpen(false);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setAddMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [addMenuOpen]);
 
   const appendSearchToken = (token: string) => {
     const next = search.trim() ? `${search.trim()} ${token} ` : `${token} `;
@@ -100,7 +124,7 @@ export function TopBar({
   };
 
   return (
-    <header className="h-[54px] px-4 lg:px-6 flex items-center justify-between gap-3 lg:gap-4 border-b border-[#E6E8EC] dark:border-[#2B2D32] bg-white dark:bg-[#202124] shrink-0 z-20">
+    <header className="relative h-[54px] px-4 lg:px-6 flex items-center justify-between gap-3 lg:gap-4 border-b border-[#E6E8EC] dark:border-[#2B2D32] bg-white dark:bg-[#202124] shrink-0 z-30">
       {/* Left: Mobile toggle + Section Title */}
       <div className="flex items-center gap-2 min-w-0">
         <button
@@ -356,15 +380,111 @@ export function TopBar({
           />
         </div>
 
-        {/* Primary Add CTA */}
-        <button
-          type="button"
-          onClick={onOpenAddModal}
-          className="h-9 px-3 sm:px-3.5 rounded-lg bg-[#0B72E7] hover:bg-[#0960C5] active:bg-[#0852A8] text-white text-[13px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" strokeWidth={2.2} />
-          <span>Добавить</span>
-        </button>
+        {/* Primary Add Split CTA with Note & To-Do List menu */}
+        <div ref={addMenuRef} className="relative flex items-center shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setAddMenuOpen(false);
+              onOpenAddModal('single');
+            }}
+            className="h-9 pl-3 pr-2.5 sm:pl-3.5 sm:pr-3 rounded-l-lg bg-[#0B72E7] hover:bg-[#0960C5] active:bg-[#0852A8] text-white text-[13px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+          >
+            <Plus className="w-4 h-4" strokeWidth={2.2} />
+            <span>Добавить</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setAddMenuOpen((v) => !v)}
+            aria-label="Выбрать тип добавления"
+            aria-expanded={addMenuOpen}
+            className="h-9 w-7 rounded-r-lg bg-[#0B72E7] hover:bg-[#0960C5] active:bg-[#0852A8] border-l border-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+          >
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {addMenuOpen && (
+            <div className="absolute right-0 top-[calc(100%+6px)] w-56 rounded-lg bg-white dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#34373E] shadow-xl py-1.5 z-30">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  onOpenAddModal('single');
+                }}
+                className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-[#F4F5F7] dark:hover:bg-[#32353B] transition-colors cursor-pointer"
+              >
+                <Link2 className="w-4 h-4 text-[#0B72E7] dark:text-[#58A6FF] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-[#181A1F] dark:text-[#F1F3F5]">
+                    Закладку
+                  </div>
+                  <div className="text-[11px] text-[#7A828F] dark:text-[#8E96A4]">
+                    Сохранить ссылку или статью
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  onOpenAddModal('note');
+                }}
+                className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-[#F4F5F7] dark:hover:bg-[#32353B] transition-colors cursor-pointer"
+              >
+                <StickyNote className="w-4 h-4 text-[#D97706] dark:text-[#FBBF24] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-[#181A1F] dark:text-[#F1F3F5]">
+                    Заметку
+                  </div>
+                  <div className="text-[11px] text-[#7A828F] dark:text-[#8E96A4]">
+                    Текст, цвет фона и теги
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  onOpenAddModal('todo');
+                }}
+                className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-[#F4F5F7] dark:hover:bg-[#32353B] transition-colors cursor-pointer"
+              >
+                <ListChecks className="w-4 h-4 text-[#16A34A] dark:text-[#4ADE80] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-[#181A1F] dark:text-[#F1F3F5]">
+                    Список задач
+                  </div>
+                  <div className="text-[11px] text-[#7A828F] dark:text-[#8E96A4]">
+                    Прогресс в % и приоритет
+                  </div>
+                </div>
+              </button>
+
+              <div className="my-1 border-t border-[#ECEEF2] dark:border-[#34373E]" />
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  onOpenAddModal('batch');
+                }}
+                className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-[#F4F5F7] dark:hover:bg-[#32353B] transition-colors cursor-pointer"
+              >
+                <Layers className="w-4 h-4 text-[#5F6672] dark:text-[#A1A7B3] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-[#181A1F] dark:text-[#F1F3F5]">
+                    Несколько ссылок
+                  </div>
+                  <div className="text-[11px] text-[#7A828F] dark:text-[#8E96A4]">
+                    Добавить списком по одной в строке
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
