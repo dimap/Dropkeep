@@ -388,19 +388,28 @@ function extractMessageText(rawContent: unknown): string {
     return rawContent
       .map((part) => {
         if (typeof part === 'string') return part;
-        if (part && typeof part === 'object' && 'text' in part) {
-          return String((part as { text?: unknown }).text || '');
+        if (part && typeof part === 'object') {
+          const obj = part as { text?: unknown; content?: unknown; value?: unknown };
+          if (typeof obj.text === 'string') return obj.text;
+          if (obj.text && typeof obj.text === 'object' && 'value' in obj.text) {
+            return String((obj.text as { value?: unknown }).value || '');
+          }
+          if (typeof obj.content === 'string') return obj.content;
+          if (typeof obj.value === 'string') return obj.value;
         }
         return '';
       })
       .join('');
+  }
+  if (rawContent && typeof rawContent === 'object' && 'text' in rawContent) {
+    return String((rawContent as { text?: unknown }).text || '');
   }
   return '';
 }
 
 async function callOpenAiCompatibleChat(
   messages: Array<{ role: 'system' | 'user'; content: string }>,
-  maxTokens = 450,
+  maxTokens = 512,
   timeoutMs = 25_000,
   options?: { allowReasoningOnly?: boolean }
 ): Promise<{ content: string; model: string }> {
@@ -432,43 +441,86 @@ async function callOpenAiCompatibleChat(
     }),
   });
 
+  const rawBodyText = await response.text();
+  let parsedBody: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(rawBodyText) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      parsedBody = parsed as Record<string, unknown>;
+    }
+  } catch {
+    parsedBody = null;
+  }
+
   if (!response.ok) {
     let detail = '';
-    try {
-      const errJson = (await response.json()) as { error?: { message?: string } | string };
-      if (typeof errJson.error === 'string') {
-        detail = errJson.error;
-      } else if (errJson.error?.message) {
-        detail = errJson.error.message;
-      }
-    } catch {
-      // ignore body parse failure
+    const errVal = parsedBody?.error;
+    if (typeof errVal === 'string') {
+      detail = errVal;
+    } else if (errVal && typeof errVal === 'object' && 'message' in errVal) {
+      detail = String((errVal as { message?: unknown }).message || '');
+    } else if (typeof parsedBody?.message === 'string') {
+      detail = parsedBody.message;
     }
     const safeDetail = detail ? `: ${detail.slice(0, 180)}` : '';
     throw new Error(`Ошибка ответа ИИ-сервера (HTTP ${response.status})${safeDetail}`);
   }
 
-  const data = (await response.json()) as {
+  // Some OpenAI-compatible gateways (e.g. OpenRouter) can return HTTP 200 with an error object
+  if (parsedBody && parsedBody.error) {
+    const errVal = parsedBody.error;
+    const errMsg =
+      typeof errVal === 'string'
+        ? errVal
+        : typeof (errVal as { message?: unknown }).message === 'string'
+          ? String((errVal as { message?: unknown }).message)
+          : '';
+    throw new Error(`Ошибка ИИ-сервера${errMsg ? `: ${errMsg.slice(0, 180)}` : ''}`);
+  }
+
+  const data = (parsedBody || {}) as {
+    id?: unknown;
+    model?: unknown;
+    output_text?: unknown;
+    response?: unknown;
+    message?: { content?: unknown };
     choices?: Array<{
+      text?: unknown;
       finish_reason?: string | null;
       message?: {
         content?: unknown;
         reasoning_content?: unknown;
         reasoning?: unknown;
+        refusal?: unknown;
       };
     }>;
   };
-  const choice = data.choices?.[0];
-  const content = extractMessageText(choice?.message?.content).trim();
+
+  const choice = Array.isArray(data.choices) ? data.choices[0] : undefined;
+  const content = (
+    extractMessageText(choice?.message?.content) ||
+    extractMessageText(choice?.text) ||
+    extractMessageText(data.message?.content) ||
+    extractMessageText(data.output_text) ||
+    (typeof data.response === 'string' ? data.response : '')
+  ).trim();
+
   const reasoning = extractMessageText(
-    choice?.message?.reasoning_content ?? choice?.message?.reasoning
+    choice?.message?.reasoning_content ??
+      choice?.message?.reasoning ??
+      choice?.message?.refusal
   ).trim();
 
   if (!content) {
-    if (options?.allowReasoningOnly && (reasoning || choice)) {
+    if (options?.allowReasoningOnly && (reasoning || choice || data.id || data.model)) {
       return { content: reasoning || 'OK', model };
     }
-    throw new Error('ИИ-модель вернула пустой ответ');
+    const keys = parsedBody ? Object.keys(parsedBody).slice(0, 6).join(', ') : 'non-json';
+    const choicesCount = Array.isArray(data.choices) ? String(data.choices.length) : 'нет';
+    const finishReason = choice?.finish_reason ? `, finish_reason: ${choice.finish_reason}` : '';
+    throw new Error(
+      `ИИ-модель вернула пустой ответ (choices: ${choicesCount}${finishReason}, поля: ${keys})`
+    );
   }
 
   return { content, model };
@@ -647,8 +699,17 @@ export async function suggestTagsWithAi(input: SuggestTagsInput): Promise<Sugges
 export async function testAiConnection(): Promise<{ ok: boolean; model: string; latencyMs: number }> {
   const started = Date.now();
   const { model } = await callOpenAiCompatibleChat(
-    [{ role: 'user', content: 'Reply with OK.' }],
-    256,
+    [
+      {
+        role: 'system',
+        content: 'You are a helpful assistant. Respond ONLY with a valid JSON object: {"status": "ok"}',
+      },
+      {
+        role: 'user',
+        content: 'Confirm connection by replying with {"status": "ok"}.',
+      },
+    ],
+    512,
     25_000,
     { allowReasoningOnly: true }
   );
