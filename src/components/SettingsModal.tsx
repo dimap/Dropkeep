@@ -86,7 +86,7 @@ interface SettingsModalProps {
 
 const DOCKER_COMPOSE_SNIPPET = `services:
   dropkeep:
-    image: ghcr.io/dimap2008/dropkeep:latest
+    image: ghcr.io/dimap/dropkeep:latest
     container_name: dropkeep
     restart: unless-stopped
     ports:

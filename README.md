@@ -91,8 +91,6 @@
 
 При публикации каждого нового релиза в GitHub Actions автоматически собираются и публикуются мультиархитектурные образы (`linux/amd64` и `linux/arm64` — подходит для x86_64-серверов, Apple Silicon и Raspberry Pi).
 
-Замените `<owner>/<repo>` на имя вашего аккаунта и репозитория на GitHub (в нижнем регистре, например `ghcr.io/username/dropkeep:latest`).
-
 #### Запуск через `docker compose`
 
 Создайте файл `docker-compose.yml`:
@@ -100,7 +98,7 @@
 ```yaml
 services:
   dropkeep:
-    image: ghcr.io/<owner>/<repo>:latest
+    image: ghcr.io/dimap/dropkeep:latest
     container_name: dropkeep
     restart: unless-stopped
     ports:
@@ -155,7 +153,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3000:3000 \
   -v dropkeep_data:/data \
-  ghcr.io/<owner>/<repo>:latest
+  ghcr.io/dimap/dropkeep:latest
 ```
 
 Приложение будет доступно по адресу `http://localhost:3000`.
@@ -168,9 +166,9 @@ docker compose pull && docker compose up -d
 ```
 
 Можно зафиксировать конкретный релиз по тегу версии, например:
-- `ghcr.io/<owner>/<repo>:latest` — последний стабильный релиз
-- `ghcr.io/<owner>/<repo>:1.1.0` — точная версия релиза
-- `ghcr.io/<owner>/<repo>:1.1` или `:1` — последняя версия в ветке `1.1.x` / `1.x`
+- `ghcr.io/dimap/dropkeep:latest` — последний стабильный релиз
+- `ghcr.io/dimap/dropkeep:1.1.0` — точная версия релиза
+- `ghcr.io/dimap/dropkeep:1.1` или `:1` — последняя версия в ветке `1.1.x` / `1.x`
 
 ### Публикация нового Docker-релиза на GitHub
 
@@ -182,7 +180,7 @@ docker compose pull && docker compose up -d
 ### Вариант 2. Сборка из исходников
 
 ```bash
-git clone https://github.com/<owner>/<repo>.git dropkeep
+git clone https://github.com/dimap/Dropkeep.git dropkeep
 cd dropkeep
 cp .env.example .env
 
