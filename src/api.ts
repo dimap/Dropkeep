@@ -11,6 +11,7 @@ import type {
   Collection,
   Highlight,
   HighlightColor,
+  LinkCheckData,
   ScrapedMetadata,
   SortMode,
   TodoItem,
@@ -170,6 +171,15 @@ export const api = {
     apiFetch<Bookmark>(`/api/bookmarks/${encodeURIComponent(id)}/refresh`, {
       method: 'POST',
     }),
+  refreshBookmarkCover: (id: string) =>
+    apiFetch<Bookmark>(`/api/bookmarks/${encodeURIComponent(id)}/cover`, {
+      method: 'POST',
+    }),
+  checkBookmarkLink: (id: string) =>
+    apiFetch<{ bookmark: Bookmark; check: LinkCheckData }>(
+      `/api/bookmarks/${encodeURIComponent(id)}/check`,
+      { method: 'POST' }
+    ),
   createPdfSnapshot: (id: string) =>
     apiFetch<Bookmark>(`/api/bookmarks/${encodeURIComponent(id)}/snapshot`, {
       method: 'POST',
@@ -268,6 +278,11 @@ export const api = {
   // Scraper & Media Uploads
   fetchMetadata: (url: string) =>
     apiFetch<ScrapedMetadata>('/api/metadata/fetch', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
+  fetchCoverOnly: (url: string) =>
+    apiFetch<{ cover: string }>('/api/metadata/cover', {
       method: 'POST',
       body: JSON.stringify({ url }),
     }),

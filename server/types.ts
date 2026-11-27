@@ -30,6 +30,26 @@ export interface HighlightRecord {
   created_at: string;
 }
 
+export type LinkOverallStatus = '' | 'ok' | 'local_blocked' | 'local_only' | 'broken';
+
+export interface LinkCheckProbeResult {
+  ok: boolean;
+  statusCode: number | null;
+  statusText: string;
+  latencyMs: number | null;
+  provider: string;
+  location: string;
+  error: string;
+  serviceUnavailable?: boolean;
+}
+
+export interface LinkCheckData {
+  overall: LinkOverallStatus;
+  checked_at: string;
+  local: LinkCheckProbeResult;
+  external: LinkCheckProbeResult;
+}
+
 export interface BookmarkRecord {
   id: string;
   url: string;
@@ -49,6 +69,8 @@ export interface BookmarkRecord {
   ai_summary: string;
   snapshot_size: number;
   snapshot_created_at: string | null;
+  link_status: LinkOverallStatus;
+  link_check: string;
   created_at: string;
   updated_at: string;
   tags: string[];

@@ -52,6 +52,8 @@ const EMPTY_STATS: SmartStats = {
   highlights: 0,
   untagged: 0,
   duplicates: 0,
+  broken: 0,
+  localBlocked: 0,
   offline: 0,
   dbSizeBytes: 0,
   snapshotsSizeBytes: 0,
@@ -72,7 +74,116 @@ const FILTER_TITLES: Record<SmartFilter, string> = {
   offline: 'Офлайн PDF',
   untagged: 'Без тегов',
   duplicates: 'Дубликаты',
+  broken: 'Сломанные ссылки',
+  local_blocked: 'Доступны извне (блок локально)',
 };
+
+const VALID_NAV_SCOPES: NavScope[] = ['all', 'unsorted', 'favorites', 'trash', 'collection'];
+
+interface SavedNavState {
+  scope: NavScope;
+  activeCollectionId: string | null;
+  activeFilter: SmartFilter;
+  activeTag: string | null;
+}
+
+function sanitizeNavState(raw: Partial<SavedNavState> | null | undefined): SavedNavState {
+  const scopeVal =
+    typeof raw?.scope === 'string' && VALID_NAV_SCOPES.includes(raw.scope as NavScope)
+      ? (raw.scope as NavScope)
+      : 'all';
+  const filterVal =
+    typeof raw?.activeFilter === 'string' && raw.activeFilter in FILTER_TITLES
+      ? (raw.activeFilter as SmartFilter)
+      : '';
+  const collectionVal =
+    scopeVal === 'collection' &&
+    typeof raw?.activeCollectionId === 'string' &&
+    raw.activeCollectionId.trim()
+      ? raw.activeCollectionId.trim()
+      : null;
+  const tagVal =
+    typeof raw?.activeTag === 'string' && raw.activeTag.trim() ? raw.activeTag.trim() : null;
+
+  return {
+    scope: scopeVal === 'collection' && !collectionVal ? 'all' : scopeVal,
+    activeCollectionId: collectionVal,
+    activeFilter: filterVal,
+    activeTag: tagVal,
+  };
+}
+
+function readNavStateFromHash(): SavedNavState | null {
+  if (typeof window === 'undefined') return null;
+  const rawHash = window.location.hash.replace(/^#/, '').trim();
+  if (!rawHash) return null;
+  try {
+    const params = new URLSearchParams(rawHash);
+    const tag = params.get('tag');
+    const filter = params.get('filter');
+    const collection = params.get('collection');
+    const scope = params.get('scope');
+    if (!tag && !filter && !collection && !scope) return null;
+    return sanitizeNavState({
+      scope: collection ? 'collection' : ((scope as NavScope) || 'all'),
+      activeCollectionId: collection || null,
+      activeFilter: (filter as SmartFilter) || '',
+      activeTag: tag || null,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function loadInitialNavState(): SavedNavState {
+  const fromHash = readNavStateFromHash();
+  if (fromHash) return fromHash;
+  if (typeof window === 'undefined') {
+    return { scope: 'all', activeCollectionId: null, activeFilter: '', activeTag: null };
+  }
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      const raw = storage.getItem('dropkeep_nav_state');
+      if (raw) {
+        return sanitizeNavState(JSON.parse(raw) as Partial<SavedNavState>);
+      }
+    } catch {
+      // ignore storage access errors
+    }
+  }
+  return { scope: 'all', activeCollectionId: null, activeFilter: '', activeTag: null };
+}
+
+function persistNavState(nav: SavedNavState): void {
+  if (typeof window === 'undefined') return;
+  const serialized = JSON.stringify(nav);
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      storage.setItem('dropkeep_nav_state', serialized);
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+  try {
+    const params = new URLSearchParams();
+    if (nav.activeTag) {
+      params.set('tag', nav.activeTag);
+    } else if (nav.activeFilter) {
+      params.set('filter', nav.activeFilter);
+    } else if (nav.scope === 'collection' && nav.activeCollectionId) {
+      params.set('collection', nav.activeCollectionId);
+    } else if (nav.scope !== 'all') {
+      params.set('scope', nav.scope);
+    }
+    const nextHash = params.toString() ? `#${params.toString()}` : '';
+    const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+    if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) {
+      window.history.replaceState(null, '', nextUrl);
+    }
+  } catch {
+    // ignore history API errors in restricted iframes
+  }
+}
 
 function readBookmarkletDraftFromUrl(): BookmarkDraft | null {
   if (typeof window === 'undefined') return null;
@@ -139,11 +250,26 @@ export default function App() {
     return DEFAULT_DISPLAY_FIELDS;
   });
 
-  const [sortMode, setSortMode] = useState<SortMode>('newest');
-  const [scope, setScope] = useState<NavScope>('all');
-  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<SmartFilter>('');
-  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    try {
+      const saved = window.localStorage.getItem('dropkeep_sort') as SortMode | null;
+      if (saved && ['newest', 'oldest', 'title_asc', 'title_desc', 'domain'].includes(saved)) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'newest';
+  });
+
+  const initialNav = useMemo(() => loadInitialNavState(), []);
+
+  const [scope, setScope] = useState<NavScope>(initialNav.scope);
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(
+    initialNav.activeCollectionId
+  );
+  const [activeFilter, setActiveFilter] = useState<SmartFilter>(initialNav.activeFilter);
+  const [activeTag, setActiveTag] = useState<string | null>(initialNav.activeTag);
   const [search, setSearch] = useState('');
   const [aiConfigured, setAiConfigured] = useState(false);
   const [smartSearchMode, setSmartSearchMode] = useState(false);
@@ -207,6 +333,18 @@ export default function App() {
     root.classList.toggle('font-large', preferences.largeFont);
     savePreferences(preferences);
   }, [preferences]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('dropkeep_sort', sortMode);
+    } catch {
+      // ignore
+    }
+  }, [sortMode]);
+
+  useEffect(() => {
+    persistNavState({ scope, activeCollectionId, activeFilter, activeTag });
+  }, [scope, activeCollectionId, activeFilter, activeTag]);
 
   const handleUpdatePreferences = useCallback((patch: Partial<AppPreferences>) => {
     setPreferences((prev) => ({ ...prev, ...patch }));
@@ -272,6 +410,14 @@ export default function App() {
       setTags(data.tags);
       setStats(data.stats);
       setAiConfigured(Boolean(data.aiConfigured));
+      setActiveCollectionId((curr) => {
+        if (curr && !data.collections.some((c) => c.id === curr)) {
+          setScope((prevScope) => (prevScope === 'collection' ? 'all' : prevScope));
+          return null;
+        }
+        return curr;
+      });
+      setActiveTag((curr) => (curr && !data.tags.some((t) => t.tag === curr) ? null : curr));
     } catch (err) {
       if ((err as { status?: number }).status === 401) {
         setAuthStatus((prev) => (prev ? { ...prev, authenticated: false } : prev));
@@ -397,7 +543,7 @@ export default function App() {
     setAddModalOpen(true);
     setPendingBookmarklet(null);
     try {
-      window.history.replaceState({}, '', window.location.pathname);
+      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
     } catch {
       // ignore
     }
@@ -836,6 +982,87 @@ export default function App() {
     }
   }, [selectedIds, bookmarks, bulkRefreshProgress, loadWorkspace, showToast]);
 
+  const handleBulkCheckLinks = useCallback(async () => {
+    const idsToCheck = selectedIds.filter((id) => {
+      const bm = bookmarks.find((item) => item.id === id);
+      return bm ? Boolean(bm.url) : true;
+    });
+    if (!idsToCheck.length || bulkRefreshProgress) {
+      if (selectedIds.length > 0 && idsToCheck.length === 0) {
+        showToast('Для заметок и списков задач проверка ссылок не требуется');
+      }
+      return;
+    }
+
+    bulkRefreshCancelRef.current = false;
+    let cursor = 0;
+    let completed = 0;
+    let okCount = 0;
+    let localBlockedCount = 0;
+    let brokenCount = 0;
+    let failedCount = 0;
+
+    setBulkRefreshProgress({
+      mode: 'check',
+      completed: 0,
+      total: idsToCheck.length,
+      succeeded: 0,
+      failed: 0,
+    });
+
+    const workerCount = Math.min(2, idsToCheck.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (!bulkRefreshCancelRef.current) {
+        const idx = cursor++;
+        if (idx >= idsToCheck.length) break;
+        const id = idsToCheck[idx];
+
+        setRefreshingIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        try {
+          const { bookmark: updated, check } = await api.checkBookmarkLink(id);
+          if (check.overall === 'ok' || check.overall === 'local_only') {
+            okCount += 1;
+          } else if (check.overall === 'local_blocked') {
+            localBlockedCount += 1;
+          } else if (check.overall === 'broken') {
+            brokenCount += 1;
+          }
+          setBookmarks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+          setActiveBookmark((curr) => (curr && curr.id === updated.id ? updated : curr));
+        } catch {
+          failedCount += 1;
+        } finally {
+          completed += 1;
+          setRefreshingIds((prev) => prev.filter((item) => item !== id));
+          setBulkRefreshProgress({
+            mode: 'check',
+            completed,
+            total: idsToCheck.length,
+            succeeded: okCount + localBlockedCount,
+            failed: brokenCount + failedCount,
+          });
+        }
+      }
+    });
+
+    await Promise.all(workers);
+
+    setBulkRefreshProgress(null);
+    setRefreshingIds([]);
+    loadWorkspace();
+
+    if (bulkRefreshCancelRef.current) {
+      showToast(`Проверка остановлена (${completed} из ${idsToCheck.length})`);
+    } else {
+      setSelectedIds([]);
+      const parts = [`Проверено: ${completed}`];
+      if (okCount > 0) parts.push(`доступно: ${okCount}`);
+      if (localBlockedCount > 0) parts.push(`извне: ${localBlockedCount}`);
+      if (brokenCount > 0) parts.push(`сломано: ${brokenCount}`);
+      showToast(parts.join(' · '));
+    }
+  }, [selectedIds, bookmarks, bulkRefreshProgress, loadWorkspace, showToast]);
+
   // Compute current workspace header title
   const getHeaderTitle = () => {
     if (activeTag) return `#${activeTag}`;
@@ -1112,6 +1339,7 @@ export default function App() {
           onEmptyTrash={handleEmptyTrash}
           onBulkAction={handleBulkAction}
           onBulkRefresh={handleBulkRefresh}
+          onBulkCheck={handleBulkCheckLinks}
           onCancelBulkRefresh={handleCancelBulkRefresh}
           onClickTag={handleSelectTag}
           onOpenAddModal={() =>

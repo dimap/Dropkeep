@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Activity,
+  AlertTriangle,
   BookOpen,
   Check,
+  CheckCircle2,
   Copy,
   Download,
   ExternalLink,
@@ -10,18 +13,22 @@ import {
   FileDown,
   FileText,
   Folder,
+  Globe,
   Highlighter,
+  Image as ImageIcon,
   ListChecks,
   Loader2,
   Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
+  Server,
   Sparkles,
   Star,
   StickyNote,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react';
 import { api } from '../api';
 import type {
@@ -32,6 +39,7 @@ import type {
   Collection,
   FallbackCoverStyle,
   HighlightColor,
+  LinkCheckData,
   TagCount,
   TodoItem,
 } from '../types';
@@ -82,6 +90,20 @@ function parseSavedSummary(raw: string): AiSummaryData | null {
     }
   } catch {
     return { tldr: trimmed, bullets: [] };
+  }
+  return null;
+}
+
+function parseLinkCheck(raw: string): LinkCheckData | null {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as Partial<LinkCheckData>;
+    if (parsed && typeof parsed === 'object' && parsed.local && parsed.external) {
+      return parsed as LinkCheckData;
+    }
+  } catch {
+    return null;
   }
   return null;
 }
@@ -164,6 +186,8 @@ export function InspectorPanel({
   const [saving, setSaving] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingCover, setRefreshingCover] = useState(false);
+  const [checkingLink, setCheckingLink] = useState(false);
   const [aiBusy, setAiBusy] = useState<null | 'all' | 'tags' | 'excerpt' | 'collection' | 'summary'>(null);
   const [aiNote, setAiNote] = useState('');
   const [summaryCopied, setSummaryCopied] = useState(false);
@@ -172,6 +196,7 @@ export function InspectorPanel({
   const [error, setError] = useState('');
 
   const savedSummary = useMemo(() => parseSavedSummary(aiSummaryRaw), [aiSummaryRaw]);
+  const linkCheckData = useMemo(() => parseLinkCheck(bookmark.link_check), [bookmark.link_check]);
 
   // Highlight composer
   const [hlText, setHlText] = useState('');
@@ -179,29 +204,53 @@ export function InspectorPanel({
   const [hlColor, setHlColor] = useState<HighlightColor>('yellow');
   const [addingHl, setAddingHl] = useState(false);
 
+  const prevBookmarkIdRef = useRef<string | null>(null);
+  const prevBookmarkRef = useRef<Bookmark | null>(null);
+
   useEffect(() => {
-    setTitle(bookmark.title);
-    setExcerpt(bookmark.excerpt);
-    setNote(bookmark.note);
-    setUrl(bookmark.url);
-    setCover(bookmark.cover);
-    setType(bookmark.type);
-    setCardColor(bookmark.card_color || '');
-    setTodoItems(bookmark.todo_items || []);
-    setCollectionId(bookmark.collection_id || '');
-    setTags(bookmark.tags);
-    setReaderContent(bookmark.reader_content);
-    setAiSummaryRaw(bookmark.ai_summary);
-    if (bookmark.type === 'note' || bookmark.type === 'todo') {
-      setTab('edit');
+    const isDifferentBookmark = prevBookmarkIdRef.current !== bookmark.id;
+    const prev = prevBookmarkRef.current;
+    prevBookmarkIdRef.current = bookmark.id;
+    prevBookmarkRef.current = bookmark;
+
+    if (isDifferentBookmark) {
+      setTitle(bookmark.title);
+      setExcerpt(bookmark.excerpt);
+      setNote(bookmark.note);
+      setUrl(bookmark.url);
+      setCover(bookmark.cover);
+      setType(bookmark.type);
+      setCardColor(bookmark.card_color || '');
+      setTodoItems(bookmark.todo_items || []);
+      setCollectionId(bookmark.collection_id || '');
+      setTags(bookmark.tags);
+      setReaderContent(bookmark.reader_content);
+      setAiSummaryRaw(bookmark.ai_summary);
+      if (bookmark.type === 'note' || bookmark.type === 'todo') {
+        setTab('edit');
+      }
+      setTagInput('');
+      setError('');
+      setAiNote('');
+      setSummaryCopied(false);
+      setSummarySavedToNote(false);
+      setSavedFeedback(false);
+      return;
     }
-    setTagInput('');
-    setError('');
-    setAiNote('');
-    setSummaryCopied(false);
-    setSummarySavedToNote(false);
-    setSavedFeedback(false);
-  }, [bookmark]);
+
+    // Same bookmark updated (e.g. cover refresh, link check, PDF snapshot, AI summary, favorite):
+    // Only sync fields that actually changed on the server so unsaved edits/AI suggestions are never wiped.
+    if (prev) {
+      if (bookmark.cover !== prev.cover) setCover(bookmark.cover);
+      if (bookmark.ai_summary !== prev.ai_summary) setAiSummaryRaw(bookmark.ai_summary);
+      if (bookmark.reader_content && bookmark.reader_content !== prev.reader_content) {
+        setReaderContent(bookmark.reader_content);
+      }
+      if (bookmark.todo_items !== prev.todo_items && isTodo) {
+        setTodoItems(bookmark.todo_items || []);
+      }
+    }
+  }, [bookmark, isTodo]);
 
   // Close preview popup on Escape key
   useEffect(() => {
@@ -290,6 +339,11 @@ export function InspectorPanel({
     setError('');
     try {
       const updated = await api.refreshBookmark(bookmark.id);
+      setTitle(updated.title);
+      setExcerpt(updated.excerpt);
+      setCover(updated.cover);
+      setType(updated.type);
+      setReaderContent(updated.reader_content);
       onUpdated(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось обновить данные со страницы');
@@ -298,17 +352,58 @@ export function InspectorPanel({
     }
   };
 
+  const handleRefreshCoverOnly = async () => {
+    if (isLocalItem || !bookmark.url) return;
+    setRefreshingCover(true);
+    setError('');
+    try {
+      const updated = await api.refreshBookmarkCover(bookmark.id);
+      setCover(updated.cover);
+      onUpdated(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось обновить превью');
+    } finally {
+      setRefreshingCover(false);
+    }
+  };
+
+  const handleCheckLink = async () => {
+    if (isLocalItem || !bookmark.url) return;
+    setCheckingLink(true);
+    setError('');
+    try {
+      const res = await api.checkBookmarkLink(bookmark.id);
+      onUpdated(res.bookmark);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось проверить доступность ссылки');
+    } finally {
+      setCheckingLink(false);
+    }
+  };
+
   const runAiSuggest = async (modeType: 'all' | 'tags' | 'excerpt' | 'collection') => {
-    setAiBusy(modeType);
     setError('');
     setAiNote('');
 
-    const wantExcerpt = !isNote && (modeType === 'all' || modeType === 'excerpt');
-    const fields = {
-      tags: modeType === 'all' || modeType === 'tags',
-      collection: modeType === 'all' || modeType === 'collection',
-      excerpt: wantExcerpt,
-    };
+    const fields =
+      modeType === 'all'
+        ? {
+            excerpt: !isNote && !excerpt.trim(),
+            collection: !collectionId,
+            tags: tags.length === 0,
+          }
+        : {
+            excerpt: !isNote && modeType === 'excerpt',
+            collection: modeType === 'collection',
+            tags: modeType === 'tags',
+          };
+
+    if (!fields.excerpt && !fields.collection && !fields.tags) {
+      setAiNote('Описание, коллекция и теги уже заполнены — обновите нужное поле отдельной кнопкой');
+      return;
+    }
+
+    setAiBusy(modeType);
 
     const aiReaderContent = isNote
       ? note
@@ -324,6 +419,14 @@ export function InspectorPanel({
         reader_content: aiReaderContent,
         fields,
       });
+
+      if (!isLocalItem && res.metadata?.reader_content) {
+        setReaderContent((curr) =>
+          res.metadata && res.metadata.reader_content.length > curr.length
+            ? res.metadata.reader_content
+            : curr
+        );
+      }
 
       const parts: string[] = [];
       if (fields.excerpt && res.excerpt) {
@@ -345,6 +448,8 @@ export function InspectorPanel({
 
       if (parts.length > 0) {
         setAiNote(`ИИ: ${parts.join(' · ')} (нажмите «Сохранить»)`);
+      } else {
+        setAiNote('ИИ не смог подобрать новые значения для этой записи');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось получить подсказки от ИИ');
@@ -816,16 +921,32 @@ export function InspectorPanel({
                     fallbackStyle={fallbackCoverStyle}
                     className="w-full h-full"
                   />
-                  <button
-                    type="button"
-                    onClick={handleRefreshMetadata}
-                    disabled={refreshing}
-                    title="Обновить обложку (или сделать скриншот через браузер), описание и копию текста со страницы"
-                    className="absolute bottom-2 right-2 h-7 px-2.5 rounded-md bg-white/95 dark:bg-[#202124]/95 border border-[#D4DCE6] dark:border-[#383B42] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] flex items-center gap-1.5 hover:border-[#0B72E7] transition-colors disabled:opacity-60"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
-                    <span>{refreshing ? 'Обновление...' : 'Обновить метаданные'}</span>
-                  </button>
+                  <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleRefreshCoverOnly}
+                      disabled={refreshingCover || refreshing}
+                      title="Обновить только картинку превью (название и описание останутся без изменений)"
+                      className="h-7 px-2.5 rounded-md bg-white/95 dark:bg-[#202124]/95 border border-[#D4DCE6] dark:border-[#383B42] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] flex items-center gap-1.5 hover:border-[#0B72E7] transition-colors disabled:opacity-60"
+                    >
+                      {refreshingCover ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <ImageIcon className="w-3 h-3" />
+                      )}
+                      <span>{refreshingCover ? 'Превью...' : 'Превью'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRefreshMetadata}
+                      disabled={refreshing || refreshingCover}
+                      title="Обновить обложку, название, описание и копию текста со страницы"
+                      className="h-7 px-2.5 rounded-md bg-white/95 dark:bg-[#202124]/95 border border-[#D4DCE6] dark:border-[#383B42] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] flex items-center gap-1.5 hover:border-[#0B72E7] transition-colors disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
+                      <span>{refreshing ? 'Обновление...' : 'Метаданные'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* On-demand AI enrichment action bar (hidden when AI is not configured) */}
@@ -925,6 +1046,114 @@ export function InspectorPanel({
                       {savingPdf && <Loader2 className="w-3 h-3 animate-spin" />}
                       <span>{savingPdf ? 'Сохранение...' : 'Сохранить PDF'}</span>
                     </button>
+                  )}
+                </div>
+
+                {/* Dual Link Availability Checker (Local server + External probe) */}
+                <div className="px-3 py-2 rounded-lg bg-[#F6F7F9] dark:bg-[#26282C] border border-[#E6E8EC] dark:border-[#32353B] space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {bookmark.link_status === 'ok' ? (
+                        <CheckCircle2 className="w-4 h-4 text-[#16A34A] dark:text-[#4ADE80] shrink-0" />
+                      ) : bookmark.link_status === 'local_blocked' ? (
+                        <AlertTriangle className="w-4 h-4 text-[#D97706] dark:text-[#FBBF24] shrink-0" />
+                      ) : bookmark.link_status === 'broken' ? (
+                        <XCircle className="w-4 h-4 text-[#DC2626] dark:text-[#F87171] shrink-0" />
+                      ) : (
+                        <Activity className="w-4 h-4 text-[#7A828F] shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-[12px] font-medium text-[#181A1F] dark:text-[#F1F3F5] truncate">
+                          {bookmark.link_status === 'ok'
+                            ? 'Ссылка доступна'
+                            : bookmark.link_status === 'local_blocked'
+                              ? 'Доступна извне (блок локально)'
+                              : bookmark.link_status === 'local_only'
+                                ? 'Доступна только с сервера'
+                                : bookmark.link_status === 'broken'
+                                  ? 'Ссылка недоступна'
+                                  : linkCheckData
+                                    ? 'Проверка не завершена'
+                                    : 'Доступность ссылки'}
+                        </div>
+                        <div className="text-[11px] text-[#7A828F] truncate tabular-nums">
+                          {linkCheckData?.checked_at
+                            ? `Проверено ${formatShortDate(linkCheckData.checked_at)}`
+                            : 'Сервер и внешний сервис'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={checkingLink}
+                      onClick={handleCheckLink}
+                      title="Проверить доступность одновременно с вашего сервера и через внешний сервис"
+                      className="h-7 px-2.5 rounded-md border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[11.5px] font-medium text-[#181A1F] dark:text-[#F1F3F5] inline-flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap shrink-0"
+                    >
+                      {checkingLink && <Loader2 className="w-3 h-3 animate-spin" />}
+                      <span>{checkingLink ? 'Проверка...' : linkCheckData ? 'Повторить' : 'Проверить'}</span>
+                    </button>
+                  </div>
+
+                  {linkCheckData && (
+                    <div className="pt-1.5 border-t border-[#E6E8EC] dark:border-[#32353B] space-y-1.5 text-[11.5px]">
+                      {/* Local server probe row */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[#5F6672] dark:text-[#A1A7B3] shrink-0">
+                          <Server className="w-3.5 h-3.5 shrink-0" />
+                          <span>Ваш сервер</span>
+                        </div>
+                        <div
+                          className={`text-right leading-snug min-w-0 ${
+                            linkCheckData.local.ok
+                              ? 'text-[#15803D] dark:text-[#4ADE80]'
+                              : 'text-[#DC2626] dark:text-[#F87171]'
+                          }`}
+                        >
+                          <span className="font-medium">
+                            {linkCheckData.local.ok
+                              ? `HTTP ${linkCheckData.local.statusCode ?? 'OK'}`
+                              : linkCheckData.local.error || `HTTP ${linkCheckData.local.statusCode ?? '—'}`}
+                          </span>
+                          {linkCheckData.local.latencyMs !== null && (
+                            <span className="text-[#7A828F] dark:text-[#8E96A4] tabular-nums ml-1">
+                              ({linkCheckData.local.latencyMs} мс)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* External probe row */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-[#5F6672] dark:text-[#A1A7B3] shrink-0">
+                          <Globe className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate max-w-[140px]">
+                            Извне · {linkCheckData.external.location || 'EU/US'}
+                          </span>
+                        </div>
+                        <div
+                          className={`text-right leading-snug min-w-0 ${
+                            linkCheckData.external.ok
+                              ? 'text-[#15803D] dark:text-[#4ADE80]'
+                              : linkCheckData.external.serviceUnavailable
+                                ? 'text-[#B45309] dark:text-[#FBBF24]'
+                                : 'text-[#DC2626] dark:text-[#F87171]'
+                          }`}
+                        >
+                          <span className="font-medium">
+                            {linkCheckData.external.ok
+                              ? `HTTP ${linkCheckData.external.statusCode ?? 'OK'}`
+                              : linkCheckData.external.error || `HTTP ${linkCheckData.external.statusCode ?? '—'}`}
+                          </span>
+                          {linkCheckData.external.latencyMs !== null && (
+                            <span className="text-[#7A828F] dark:text-[#8E96A4] tabular-nums ml-1">
+                              ({linkCheckData.external.latencyMs} мс)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

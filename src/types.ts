@@ -55,7 +55,29 @@ export type SmartFilter =
   | 'highlights'
   | 'offline'
   | 'untagged'
-  | 'duplicates';
+  | 'duplicates'
+  | 'broken'
+  | 'local_blocked';
+
+export type LinkOverallStatus = '' | 'ok' | 'local_blocked' | 'local_only' | 'broken';
+
+export interface LinkCheckProbeResult {
+  ok: boolean;
+  statusCode: number | null;
+  statusText: string;
+  latencyMs: number | null;
+  provider: string;
+  location: string;
+  error: string;
+  serviceUnavailable?: boolean;
+}
+
+export interface LinkCheckData {
+  overall: LinkOverallStatus;
+  checked_at: string;
+  local: LinkCheckProbeResult;
+  external: LinkCheckProbeResult;
+}
 
 export interface Collection {
   id: string;
@@ -96,6 +118,8 @@ export interface Bookmark {
   ai_summary: string;
   snapshot_size: number;
   snapshot_created_at: string | null;
+  link_status: LinkOverallStatus;
+  link_check: string;
   created_at: string;
   updated_at: string;
   tags: string[];
@@ -122,6 +146,8 @@ export interface SmartStats {
   highlights: number;
   untagged: number;
   duplicates: number;
+  broken: number;
+  localBlocked: number;
   offline: number;
   dbSizeBytes: number;
   snapshotsSizeBytes: number;

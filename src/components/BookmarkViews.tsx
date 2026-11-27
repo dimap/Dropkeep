@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
+  Activity,
   Check,
   CheckSquare,
   Copy,
@@ -7,6 +8,7 @@ import {
   FileCheck2,
   FileDown,
   FolderInput,
+  Globe,
   Highlighter,
   ListChecks,
   Loader2,
@@ -19,6 +21,7 @@ import {
   StickyNote,
   Tag,
   Trash2,
+  Unlink,
   X,
 } from 'lucide-react';
 import type {
@@ -83,6 +86,7 @@ function getMasonryColumnCount(columnCount: number, containerWidth: number): num
 }
 
 export interface BulkRefreshProgress {
+  mode?: 'refresh' | 'check';
   completed: number;
   total: number;
   succeeded: number;
@@ -124,6 +128,7 @@ interface BookmarkViewsProps {
     extra?: { collection_id?: string | null; tag?: string }
   ) => void;
   onBulkRefresh: () => void;
+  onBulkCheck: () => void;
   onCancelBulkRefresh: () => void;
   onClickTag: (tag: string) => void;
   onOpenAddModal: () => void;
@@ -747,6 +752,41 @@ const BookmarkItem = memo(function BookmarkItem({
                 </button>
               </>
             )}
+            {!isLocalItem && bm.link_status === 'broken' && (
+              <>
+                {sep()}
+                <span
+                  title="Недоступна ни с сервера, ни извне"
+                  className="inline-flex items-center gap-1 text-[#DC2626] dark:text-[#F87171] font-medium whitespace-nowrap"
+                >
+                  <Unlink className="w-3 h-3 shrink-0" />
+                  <span>Сломана</span>
+                </span>
+              </>
+            )}
+            {!isLocalItem && bm.link_status === 'local_blocked' && (
+              <>
+                {sep()}
+                <span
+                  title="Недоступна с вашего сервера, но жива во внешнем сервисе"
+                  className="inline-flex items-center gap-1 text-[#B45309] dark:text-[#FBBF24] font-medium whitespace-nowrap"
+                >
+                  <Globe className="w-3 h-3 shrink-0" />
+                  <span>Извне</span>
+                </span>
+              </>
+            )}
+            {!isLocalItem && bm.link_status === 'local_only' && (
+              <>
+                {sep()}
+                <span
+                  title="Доступна только с вашего сервера"
+                  className="text-[#5F6672] dark:text-[#9CA3AF] font-medium whitespace-nowrap"
+                >
+                  Локально
+                </span>
+              </>
+            )}
           </>
         )}
         {showHighlightCount && (
@@ -1149,6 +1189,26 @@ const BookmarkItem = memo(function BookmarkItem({
           </button>
         )}
 
+        {displayFields.info && !isLocalItem && bm.link_status === 'broken' && (
+          <span
+            title="Недоступна ни с сервера, ни извне"
+            className="relative z-10 pointer-events-none inline-flex items-center gap-1 text-[11.5px] font-medium text-[#DC2626] dark:text-[#F87171] shrink-0 whitespace-nowrap"
+          >
+            <Unlink className="w-3 h-3" />
+            <span className="hidden sm:inline">Сломана</span>
+          </span>
+        )}
+
+        {displayFields.info && !isLocalItem && bm.link_status === 'local_blocked' && (
+          <span
+            title="Недоступна с вашего сервера, но жива во внешнем сервисе"
+            className="relative z-10 pointer-events-none inline-flex items-center gap-1 text-[11.5px] font-medium text-[#B45309] dark:text-[#FBBF24] shrink-0 whitespace-nowrap"
+          >
+            <Globe className="w-3 h-3" />
+            <span className="hidden sm:inline">Извне</span>
+          </span>
+        )}
+
         {displayFields.info && (
           <>
             <span className="relative z-10 pointer-events-none hidden sm:inline text-[12px] text-[#7A828F] dark:text-[#8E96A4] truncate max-w-[150px] shrink-0">
@@ -1352,6 +1412,7 @@ export const BookmarkViews = memo(function BookmarkViews({
   onEmptyTrash,
   onBulkAction,
   onBulkRefresh,
+  onBulkCheck,
   onCancelBulkRefresh,
   onClickTag,
   onOpenAddModal,
@@ -1488,7 +1549,9 @@ export const BookmarkViews = memo(function BookmarkViews({
               <div className="flex items-center gap-2 text-[13px] font-medium text-[#0B72E7] dark:text-[#60A5FA]">
                 <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
                 <span className="tabular-nums">
-                  Обновление превью и описаний: {bulkRefreshProgress.completed} / {bulkRefreshProgress.total}
+                  {bulkRefreshProgress.mode === 'check'
+                    ? `Проверка доступности ссылок: ${bulkRefreshProgress.completed} / ${bulkRefreshProgress.total}`
+                    : `Обновление превью и описаний: ${bulkRefreshProgress.completed} / ${bulkRefreshProgress.total}`}
                 </span>
               </div>
               <button
@@ -1527,6 +1590,21 @@ export const BookmarkViews = memo(function BookmarkViews({
               <div className="flex items-center gap-1.5 flex-wrap">
                 {!isTrash && (
                   <>
+                    <button
+                      type="button"
+                      disabled={isBulkRefreshing}
+                      onClick={() => {
+                        setBulkMoveOpen(false);
+                        setBulkTagOpen(false);
+                        onBulkCheck();
+                      }}
+                      title="Проверить доступность ссылок одновременно с вашего сервера и через внешний сервис"
+                      className="h-8 px-2.5 rounded-md bg-white dark:bg-[#26282C] border border-[#D4DCE6] dark:border-[#383B42] text-[12px] font-medium flex items-center gap-1.5 hover:border-[#0B72E7] disabled:opacity-60 whitespace-nowrap"
+                    >
+                      <Activity className="w-3.5 h-3.5 text-[#0B72E7] dark:text-[#58A6FF]" />
+                      <span>Проверить ссылки</span>
+                    </button>
+
                     <button
                       type="button"
                       disabled={isBulkRefreshing}
@@ -1632,20 +1710,22 @@ export const BookmarkViews = memo(function BookmarkViews({
                       type="button"
                       disabled={isBulkRefreshing}
                       onClick={() => onBulkAction('favorite')}
-                      className="h-8 px-2.5 rounded-md bg-white dark:bg-[#26282C] border border-[#D4DCE6] dark:border-[#383B42] text-[12px] font-medium flex items-center gap-1.5 hover:border-[#D97706] disabled:opacity-60 whitespace-nowrap"
+                      title="Добавить в избранное"
+                      aria-label="Добавить в избранное"
+                      className="w-8 h-8 rounded-md bg-white dark:bg-[#26282C] border border-[#D4DCE6] dark:border-[#383B42] flex items-center justify-center hover:border-[#D97706] disabled:opacity-60 shrink-0"
                     >
                       <Star className="w-3.5 h-3.5 text-[#D97706]" />
-                      <span>В избранное</span>
                     </button>
 
                     <button
                       type="button"
                       disabled={isBulkRefreshing}
                       onClick={() => onBulkAction('trash')}
-                      className="h-8 px-2.5 rounded-md bg-white dark:bg-[#26282C] border border-[#D4DCE6] dark:border-[#383B42] text-[12px] font-medium text-red-600 dark:text-red-400 flex items-center gap-1.5 hover:border-red-500 disabled:opacity-60 whitespace-nowrap"
+                      title="Удалить в корзину"
+                      aria-label="Удалить в корзину"
+                      className="w-8 h-8 rounded-md bg-white dark:bg-[#26282C] border border-[#D4DCE6] dark:border-[#383B42] text-red-600 dark:text-red-400 flex items-center justify-center hover:border-red-500 disabled:opacity-60 shrink-0"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>В корзину</span>
                     </button>
                   </>
                 )}

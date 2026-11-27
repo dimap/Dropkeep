@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type DragEvent } from 'react';
+import { memo, useEffect, useMemo, useState, type DragEvent } from 'react';
 import {
   Bookmark,
   BookOpen,
@@ -7,6 +7,7 @@ import {
   Copy,
   FileText,
   FolderPlus,
+  Globe,
   HardDrive,
   Hash,
   Highlighter,
@@ -24,6 +25,7 @@ import {
   Sun,
   Tag,
   Trash2,
+  Unlink,
   X,
 } from 'lucide-react';
 import type { Collection, NavScope, SmartFilter, SmartStats, TagCount } from '../types';
@@ -77,10 +79,72 @@ export const Sidebar = memo(function Sidebar({
   onDeleteTag,
   onDropBookmark,
 }: SidebarProps) {
-  const [collectionsOpen, setCollectionsOpen] = useState(true);
-  const [filtersOpen, setFiltersOpen] = useState(true);
-  const [tagsOpen, setTagsOpen] = useState(true);
-  const [collapsedNodes, setCollapsedNodes] = useState<Record<string, boolean>>({});
+  const [sidebarState, setSidebarState] = useState<{
+    collectionsOpen: boolean;
+    filtersOpen: boolean;
+    tagsOpen: boolean;
+    collapsedNodes: Record<string, boolean>;
+  }>(() => {
+    const defaults = {
+      collectionsOpen: true,
+      filtersOpen: true,
+      tagsOpen: true,
+      collapsedNodes: {} as Record<string, boolean>,
+    };
+    try {
+      const raw = window.localStorage.getItem('dropkeep_sidebar_state');
+      if (!raw) return defaults;
+      const parsed = JSON.parse(raw) as Partial<typeof defaults>;
+      return {
+        collectionsOpen: typeof parsed.collectionsOpen === 'boolean' ? parsed.collectionsOpen : true,
+        filtersOpen: typeof parsed.filtersOpen === 'boolean' ? parsed.filtersOpen : true,
+        tagsOpen: typeof parsed.tagsOpen === 'boolean' ? parsed.tagsOpen : true,
+        collapsedNodes:
+          parsed.collapsedNodes && typeof parsed.collapsedNodes === 'object' && !Array.isArray(parsed.collapsedNodes)
+            ? Object.fromEntries(
+                Object.entries(parsed.collapsedNodes).filter(([, v]) => typeof v === 'boolean')
+              )
+            : {},
+      };
+    } catch {
+      return defaults;
+    }
+  });
+
+  const { collectionsOpen, filtersOpen, tagsOpen, collapsedNodes } = sidebarState;
+  const setCollectionsOpen = (updater: boolean | ((prev: boolean) => boolean)) =>
+    setSidebarState((prev) => ({
+      ...prev,
+      collectionsOpen: typeof updater === 'function' ? updater(prev.collectionsOpen) : updater,
+    }));
+  const setFiltersOpen = (updater: boolean | ((prev: boolean) => boolean)) =>
+    setSidebarState((prev) => ({
+      ...prev,
+      filtersOpen: typeof updater === 'function' ? updater(prev.filtersOpen) : updater,
+    }));
+  const setTagsOpen = (updater: boolean | ((prev: boolean) => boolean)) =>
+    setSidebarState((prev) => ({
+      ...prev,
+      tagsOpen: typeof updater === 'function' ? updater(prev.tagsOpen) : updater,
+    }));
+  const setCollapsedNodes = (
+    updater:
+      | Record<string, boolean>
+      | ((prev: Record<string, boolean>) => Record<string, boolean>)
+  ) =>
+    setSidebarState((prev) => ({
+      ...prev,
+      collapsedNodes: typeof updater === 'function' ? updater(prev.collapsedNodes) : updater,
+    }));
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('dropkeep_sidebar_state', JSON.stringify(sidebarState));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [sidebarState]);
+
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   // Build parent -> children map and O(N) deep counts once per collections change
@@ -257,6 +321,8 @@ export const Sidebar = memo(function Sidebar({
     { key: 'offline', label: 'Офлайн PDF', count: stats.offline, icon: HardDrive },
     { key: 'untagged', label: 'Без тегов', count: stats.untagged, icon: Tag },
     { key: 'duplicates', label: 'Дубликаты', count: stats.duplicates, icon: Copy },
+    { key: 'broken', label: 'Сломанные', count: stats.broken, icon: Unlink },
+    { key: 'local_blocked', label: 'Доступны извне', count: stats.localBlocked, icon: Globe },
   ];
 
   const sidebarContent = (

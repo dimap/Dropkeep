@@ -16,6 +16,8 @@ import type {
   CollectionRecord,
   HighlightColor,
   HighlightRecord,
+  LinkCheckData,
+  LinkOverallStatus,
   TodoItem,
   TodoPriority,
 } from './types.ts';
@@ -108,6 +110,22 @@ if (!existingCols.has('card_color')) {
 }
 if (!existingCols.has('todo_items')) {
   db.exec("ALTER TABLE bookmarks ADD COLUMN todo_items TEXT NOT NULL DEFAULT '[]'");
+}
+if (!existingCols.has('link_status')) {
+  db.exec("ALTER TABLE bookmarks ADD COLUMN link_status TEXT NOT NULL DEFAULT ''");
+}
+if (!existingCols.has('link_check')) {
+  db.exec("ALTER TABLE bookmarks ADD COLUMN link_check TEXT NOT NULL DEFAULT ''");
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_bookmarks_link_status ON bookmarks(link_status)');
+
+const VALID_LINK_STATUSES: LinkOverallStatus[] = ['', 'ok', 'local_blocked', 'local_only', 'broken'];
+
+function sanitizeLinkStatus(raw: unknown): LinkOverallStatus {
+  if (typeof raw === 'string' && VALID_LINK_STATUSES.includes(raw as LinkOverallStatus)) {
+    return raw as LinkOverallStatus;
+  }
+  return '';
 }
 
 const VALID_CARD_COLORS: CardColor[] = [
@@ -512,6 +530,8 @@ function hydrateBookmarks(rows: Array<Record<string, unknown>>): BookmarkRecord[
     ai_summary: String(r.ai_summary || ''),
     snapshot_size: Number(r.snapshot_size || 0),
     snapshot_created_at: r.snapshot_created_at ? String(r.snapshot_created_at) : null,
+    link_status: sanitizeLinkStatus(r.link_status),
+    link_check: String(r.link_check || ''),
     created_at: String(r.created_at),
     updated_at: String(r.updated_at),
     tags: tagsByBm.get(String(r.id)) || [],
@@ -738,6 +758,10 @@ export function listBookmarks(params: {
       );
     } else if (params.filterType === 'offline') {
       conditions.push('b.snapshot_size > 0');
+    } else if (params.filterType === 'broken') {
+      conditions.push("b.url != '' AND b.link_status = 'broken'");
+    } else if (params.filterType === 'local_blocked') {
+      conditions.push("b.url != '' AND b.link_status = 'local_blocked'");
     }
   }
 
@@ -775,6 +799,10 @@ export function listBookmarks(params: {
         conditions.push('NOT EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id)');
       } else if (lowerToken === 'is:offline' || lowerToken === 'is:pdf') {
         conditions.push('b.snapshot_size > 0');
+      } else if (lowerToken === 'is:broken') {
+        conditions.push("b.url != '' AND b.link_status = 'broken'");
+      } else if (lowerToken === 'is:blocked') {
+        conditions.push("b.url != '' AND b.link_status = 'local_blocked'");
       } else {
         freeTerms.push(token);
       }
@@ -793,7 +821,7 @@ export function listBookmarks(params: {
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const selectColumns =
     params.includeContent === false
-      ? `b.id, b.url, b.title, b.excerpt, b.note, b.cover, b.favicon, b.domain, b.type, b.card_color, b.todo_items, b.collection_id, b.is_favorite, b.is_trashed, '' AS reader_content, '' AS ai_summary, b.snapshot_size, b.snapshot_created_at, b.created_at, b.updated_at`
+      ? `b.id, b.url, b.title, b.excerpt, b.note, b.cover, b.favicon, b.domain, b.type, b.card_color, b.todo_items, b.collection_id, b.is_favorite, b.is_trashed, '' AS reader_content, '' AS ai_summary, b.snapshot_size, b.snapshot_created_at, b.link_status, b.link_check, b.created_at, b.updated_at`
       : 'b.*';
 
   const rows = db
@@ -971,11 +999,16 @@ export function updateBookmark(
     input.reader_content !== undefined ? input.reader_content.slice(0, 15000) : existing.reader_content;
   const updatedAt = new Date().toISOString();
 
+  const urlChanged = url !== existing.url;
+
   const tx = db.transaction(() => {
     db.prepare(
       `UPDATE bookmarks
        SET url = ?, title = ?, excerpt = ?, note = ?, cover = ?, favicon = ?, domain = ?,
-           type = ?, card_color = ?, todo_items = ?, collection_id = ?, is_favorite = ?, is_trashed = ?, reader_content = ?, updated_at = ?
+           type = ?, card_color = ?, todo_items = ?, collection_id = ?, is_favorite = ?, is_trashed = ?, reader_content = ?,
+           link_status = CASE WHEN ? = 1 THEN '' ELSE link_status END,
+           link_check = CASE WHEN ? = 1 THEN '' ELSE link_check END,
+           updated_at = ?
        WHERE id = ?`
     ).run(
       url,
@@ -992,6 +1025,8 @@ export function updateBookmark(
       isFavorite,
       isTrashed,
       readerContent,
+      urlChanged ? 1 : 0,
+      urlChanged ? 1 : 0,
       updatedAt,
       id
     );
@@ -1068,6 +1103,22 @@ export function updateBookmarkAiSummary(
   db.prepare(
     'UPDATE bookmarks SET ai_summary = ?, reader_content = ?, updated_at = ? WHERE id = ?'
   ).run(safeSummary, nextReader, now, id);
+  return getBookmarkById(id);
+}
+
+export function updateBookmarkLinkCheck(
+  id: string,
+  check: LinkCheckData
+): BookmarkRecord | null {
+  const existing = getBookmarkById(id);
+  if (!existing) return null;
+  const safeStatus = sanitizeLinkStatus(check.overall);
+  const serialized = JSON.stringify(check).slice(0, 4000);
+  db.prepare('UPDATE bookmarks SET link_status = ?, link_check = ? WHERE id = ?').run(
+    safeStatus,
+    serialized,
+    id
+  );
   return getBookmarkById(id);
 }
 
@@ -1270,6 +1321,8 @@ export function getSmartStats(): {
   highlights: number;
   untagged: number;
   duplicates: number;
+  broken: number;
+  localBlocked: number;
   offline: number;
   dbSizeBytes: number;
   snapshotsSizeBytes: number;
@@ -1305,6 +1358,10 @@ export function getSmartStats(): {
     ),
     duplicates: q(
       "SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND url != '' AND url IN (SELECT url FROM bookmarks WHERE is_trashed = 0 AND url != '' GROUP BY url HAVING COUNT(*) > 1)"
+    ),
+    broken: q("SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND url != '' AND link_status = 'broken'"),
+    localBlocked: q(
+      "SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND url != '' AND link_status = 'local_blocked'"
     ),
     offline: q('SELECT COUNT(*) as c FROM bookmarks WHERE is_trashed = 0 AND snapshot_size > 0'),
     dbSizeBytes,

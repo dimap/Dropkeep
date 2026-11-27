@@ -49,6 +49,7 @@ import {
   renameTag,
   updateBookmark,
   updateBookmarkAiSummary,
+  updateBookmarkLinkCheck,
   updateBookmarkSnapshot,
   updateCollection,
 } from './server/db.ts';
@@ -58,6 +59,7 @@ import {
   parseBookmarksCsv,
   parseNetscapeHtml,
 } from './server/importExport.ts';
+import { checkBookmarkAvailability } from './server/linkChecker.ts';
 import { scrapeUrlMetadata } from './server/scraper.ts';
 import { isYouTubeUrl, scrapeYouTubeMetadata } from './server/youtube.ts';
 import {
@@ -449,6 +451,79 @@ async function startServer(): Promise<void> {
     }
   });
 
+  app.post('/api/bookmarks/:id/cover', async (req, res) => {
+    const existing = getBookmarkById(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: 'Закладка не найдена' });
+      return;
+    }
+    if (!existing.url) {
+      res.status(400).json({ error: 'Обновление превью доступно только для веб-закладок' });
+      return;
+    }
+    try {
+      let nextCover = '';
+      let targetUrl = existing.url;
+      let scrapedFavicon = '';
+
+      try {
+        const meta = await scrapeUrlMetadata(existing.url);
+        targetUrl = meta.url || existing.url;
+        nextCover = meta.cover || '';
+        scrapedFavicon = meta.favicon || '';
+      } catch {
+        // Page might block simple HTML scraping; fall back to browser screenshot if available
+      }
+
+      if (!nextCover && isBrowserConfigured()) {
+        const screenshotCover = await captureCoverScreenshot(targetUrl);
+        if (screenshotCover) {
+          nextCover = screenshotCover;
+        }
+      }
+
+      if (!nextCover) {
+        res.status(400).json({ error: 'Не удалось получить превью со страницы' });
+        return;
+      }
+
+      const previousCover = existing.cover;
+      const updated = updateBookmark(existing.id, {
+        cover: nextCover,
+        favicon: existing.favicon || scrapedFavicon,
+      });
+
+      if (previousCover && previousCover !== nextCover) {
+        removeCoverScreenshotByUrl(previousCover);
+      }
+
+      res.json(updated);
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Не удалось обновить превью' });
+    }
+  });
+
+  app.post('/api/bookmarks/:id/check', async (req, res) => {
+    const existing = getBookmarkById(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: 'Закладка не найдена' });
+      return;
+    }
+    if (!existing.url) {
+      res.status(400).json({ error: 'Проверка доступности доступна только для веб-закладок' });
+      return;
+    }
+    try {
+      const check = await checkBookmarkAvailability(existing.url);
+      const updated = updateBookmarkLinkCheck(existing.id, check);
+      res.json({ bookmark: updated || existing, check });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Не удалось проверить доступность ссылки',
+      });
+    }
+  });
+
   // --- Offline PDF Snapshots ---
   app.post('/api/bookmarks/:id/snapshot', async (req, res) => {
     const existing = getBookmarkById(req.params.id);
@@ -613,6 +688,42 @@ async function startServer(): Promise<void> {
       res.json(metadata);
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : 'Не удалось загрузить страницу' });
+    }
+  });
+
+  app.post('/api/metadata/cover', async (req, res) => {
+    const rawUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    if (!rawUrl) {
+      res.status(400).json({ error: 'Укажите URL' });
+      return;
+    }
+    try {
+      let nextCover = '';
+      let targetUrl = rawUrl;
+
+      try {
+        const metadata = await scrapeUrlMetadata(rawUrl);
+        targetUrl = metadata.url || rawUrl;
+        nextCover = metadata.cover || '';
+      } catch {
+        // Fall back to screenshot if browser engine is configured
+      }
+
+      if (!nextCover && isBrowserConfigured()) {
+        const screenshotCover = await captureCoverScreenshot(targetUrl);
+        if (screenshotCover) {
+          nextCover = screenshotCover;
+        }
+      }
+
+      if (!nextCover) {
+        res.status(400).json({ error: 'Не удалось получить превью со страницы' });
+        return;
+      }
+
+      res.json({ cover: nextCover });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Не удалось загрузить превью' });
     }
   });
 

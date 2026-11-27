@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ClipboardPaste,
   Globe,
+  Image as ImageIcon,
   Layers,
   Link2,
   ListChecks,
@@ -104,6 +105,7 @@ export function AddBookmarkModal({
 
   const [batchUrls, setBatchUrls] = useState('');
   const [fetching, setFetching] = useState(false);
+  const [fetchingCover, setFetchingCover] = useState(false);
   const [aiBusy, setAiBusy] = useState<null | 'all' | 'tags' | 'excerpt' | 'collection'>(null);
   const [aiNote, setAiNote] = useState('');
   const [clipboardHint, setClipboardHint] = useState('');
@@ -201,16 +203,34 @@ export function AddBookmarkModal({
     try {
       const meta = await api.fetchMetadata(url.trim());
       setUrl(meta.url);
-      if (!title.trim() || title === meta.domain) setTitle(meta.title);
-      if (!excerpt.trim()) setExcerpt(meta.excerpt);
-      if (!cover.trim()) setCover(meta.cover);
-      setFavicon(meta.favicon);
+      setTitle((curr) => (!curr.trim() || curr === meta.domain ? meta.title : curr));
+      setExcerpt((curr) => (!curr.trim() ? meta.excerpt : curr));
+      setCover((curr) => (!curr.trim() ? meta.cover : curr));
+      setFavicon((curr) => curr || meta.favicon);
       setType(meta.type);
-      setReaderContent(meta.reader_content);
+      setReaderContent((curr) =>
+        meta.reader_content && meta.reader_content.length > curr.length ? meta.reader_content : curr
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось получить метаданные страницы');
     } finally {
       setFetching(false);
+    }
+  };
+
+  const handleFetchCoverOnly = async () => {
+    if (!url.trim()) return;
+    setFetchingCover(true);
+    setError('');
+    try {
+      const res = await api.fetchCoverOnly(url.trim());
+      if (res.cover) {
+        setCover(res.cover);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось получить превью со страницы');
+    } finally {
+      setFetchingCover(false);
     }
   };
 
@@ -231,16 +251,29 @@ export function AddBookmarkModal({
 
   const runAiSuggest = async (modeType: 'all' | 'tags' | 'excerpt' | 'collection') => {
     if (!canRunAi) return;
-    setAiBusy(modeType);
     setError('');
     setAiNote('');
 
-    const wantExcerpt = mode !== 'note' && (modeType === 'all' || modeType === 'excerpt');
-    const fields = {
-      tags: modeType === 'all' || modeType === 'tags',
-      collection: modeType === 'all' || modeType === 'collection',
-      excerpt: wantExcerpt,
-    };
+    const currentTags = parseTags();
+    const fields =
+      modeType === 'all'
+        ? {
+            excerpt: mode !== 'note' && !excerpt.trim(),
+            collection: !collectionId,
+            tags: currentTags.length === 0,
+          }
+        : {
+            excerpt: mode !== 'note' && modeType === 'excerpt',
+            collection: modeType === 'collection',
+            tags: modeType === 'tags',
+          };
+
+    if (!fields.excerpt && !fields.collection && !fields.tags) {
+      setAiNote('Описание, коллекция и теги уже заполнены — обновите нужное поле отдельной кнопкой');
+      return;
+    }
+
+    setAiBusy(modeType);
 
     const aiReaderContent =
       mode === 'note'
@@ -259,13 +292,20 @@ export function AddBookmarkModal({
       });
 
       if (mode === 'single' && res.metadata) {
-        setUrl(res.metadata.url);
-        if (!title.trim() || title === res.metadata.domain) setTitle(res.metadata.title);
-        if (!fields.excerpt && !excerpt.trim()) setExcerpt(res.metadata.excerpt);
-        if (!cover.trim()) setCover(res.metadata.cover);
-        if (!favicon) setFavicon(res.metadata.favicon);
-        setType(res.metadata.type);
-        if (!readerContent) setReaderContent(res.metadata.reader_content);
+        const meta = res.metadata;
+        setUrl(meta.url);
+        setTitle((curr) => (!curr.trim() || curr === meta.domain ? meta.title : curr));
+        if (!fields.excerpt) {
+          setExcerpt((curr) => (!curr.trim() ? meta.excerpt : curr));
+        }
+        setCover((curr) => (!curr.trim() ? meta.cover : curr));
+        setFavicon((curr) => curr || meta.favicon);
+        setType(meta.type);
+        setReaderContent((curr) =>
+          meta.reader_content && meta.reader_content.length > curr.length
+            ? meta.reader_content
+            : curr
+        );
       }
 
       const summaryParts: string[] = [];
@@ -286,8 +326,13 @@ export function AddBookmarkModal({
       }
 
       if (fields.tags && res.tags.length > 0) {
-        const merged = Array.from(new Set([...parseTags(), ...res.tags]));
-        setTagsRaw(merged.join(', '));
+        setTagsRaw((prev) => {
+          const existing = prev
+            .split(/[,#\s]+/)
+            .map((t) => t.trim().toLowerCase())
+            .filter(Boolean);
+          return Array.from(new Set([...existing, ...res.tags])).join(', ');
+        });
         const tagDetails: string[] = [];
         if (res.existingMatches.length > 0) {
           tagDetails.push(`из ваших: ${res.existingMatches.map((t) => `#${t}`).join(', ')}`);
@@ -698,9 +743,24 @@ export function AddBookmarkModal({
                   </div>
                   <button
                     type="button"
+                    onClick={handleFetchCoverOnly}
+                    disabled={fetchingCover || fetching || !url.trim()}
+                    title="Загрузить только картинку превью без изменения названия и описания"
+                    className="h-10 px-2.5 rounded-lg border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[13px] font-medium text-[#2C313A] dark:text-[#E5E7EB] flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap shrink-0"
+                  >
+                    {fetchingCover ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-4 h-4" />
+                    )}
+                    <span className="hidden sm:inline">Превью</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleFetchMeta}
-                    disabled={fetching || !url.trim()}
-                    className="h-10 px-3.5 rounded-lg border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[13px] font-medium text-[#2C313A] dark:text-[#E5E7EB] flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap shrink-0"
+                    disabled={fetching || fetchingCover || !url.trim()}
+                    title="Загрузить название, описание, превью и текст со страницы"
+                    className="h-10 px-3 rounded-lg border border-[#D4DCE6] dark:border-[#3A3D46] hover:border-[#0B72E7] text-[13px] font-medium text-[#2C313A] dark:text-[#E5E7EB] flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap shrink-0"
                   >
                     {fetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
                     <span>Загрузить</span>
