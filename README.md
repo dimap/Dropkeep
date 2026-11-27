@@ -89,6 +89,8 @@
 
 ### Вариант 1. Установка готового образа с GitHub (GHCR) — рекомендуется
 
+[![Publish Docker Image to GHCR](https://github.com/dimap/Dropkeep/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/dimap/Dropkeep/actions/workflows/docker-publish.yml)
+
 При публикации каждого нового релиза в GitHub Actions автоматически собираются и публикуются мультиархитектурные образы (`linux/amd64` и `linux/arm64` — подходит для x86_64-серверов, Apple Silicon и Raspberry Pi).
 
 #### Запуск через `docker compose`
